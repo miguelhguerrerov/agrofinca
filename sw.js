@@ -1,33 +1,35 @@
 // AgroFinca Service Worker - Offline-First PWA
-const CACHE_NAME = 'agrofinca-v2';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/css/styles.css',
-  '/js/app.js',
-  '/js/db.js',
-  '/js/sync.js',
-  '/js/supabase-client.js',
-  '/js/utils/charts.js',
-  '/js/utils/dates.js',
-  '/js/utils/format.js',
-  '/js/modules/auth.js',
-  '/js/modules/fincas.js',
-  '/js/modules/dashboard.js',
-  '/js/modules/produccion.js',
-  '/js/modules/ventas.js',
-  '/js/modules/costos.js',
-  '/js/modules/finanzas.js',
-  '/js/modules/tareas.js',
-  '/js/modules/inspecciones.js',
-  '/js/modules/fitosanitario.js',
-  '/js/modules/lombricompost.js',
-  '/js/modules/apicultura.js',
-  '/js/modules/animales.js',
-  '/js/modules/configuracion.js',
-  '/icons/icon-192.svg',
-  '/icons/icon-512.svg',
-  '/manifest.json'
+const CACHE_NAME = 'agrofinca-v3';
+
+// Use relative paths - resolved at install time via self.registration.scope
+const STATIC_FILES = [
+  './',
+  './index.html',
+  './css/styles.css',
+  './js/app.js',
+  './js/db.js',
+  './js/sync.js',
+  './js/supabase-client.js',
+  './js/utils/charts.js',
+  './js/utils/dates.js',
+  './js/utils/format.js',
+  './js/modules/auth.js',
+  './js/modules/fincas.js',
+  './js/modules/dashboard.js',
+  './js/modules/produccion.js',
+  './js/modules/ventas.js',
+  './js/modules/costos.js',
+  './js/modules/finanzas.js',
+  './js/modules/tareas.js',
+  './js/modules/inspecciones.js',
+  './js/modules/fitosanitario.js',
+  './js/modules/lombricompost.js',
+  './js/modules/apicultura.js',
+  './js/modules/animales.js',
+  './js/modules/configuracion.js',
+  './icons/icon-192.svg',
+  './icons/icon-512.svg',
+  './manifest.json'
 ];
 
 // Leaflet CDN assets to cache
@@ -42,15 +44,16 @@ const CDN_ASSETS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(STATIC_ASSETS).catch(err => {
+      // Resolve relative paths against SW scope
+      const scope = self.registration.scope;
+      const urls = STATIC_FILES.map(f => new URL(f, scope).href);
+      return cache.addAll(urls).catch(err => {
         console.warn('SW: Some static assets failed to cache:', err);
-        // Cache what we can
         return Promise.allSettled(
-          STATIC_ASSETS.map(url => cache.add(url).catch(() => null))
+          urls.map(url => cache.add(url).catch(() => null))
         );
       });
     }).then(() => {
-      // Try to cache CDN assets separately
       return caches.open(CACHE_NAME).then(cache => {
         return Promise.allSettled(
           CDN_ASSETS.map(url => cache.add(url).catch(() => null))
@@ -111,7 +114,6 @@ self.addEventListener('fetch', event => {
     caches.match(event.request).then(cached => {
       if (cached) return cached;
       return fetch(event.request).then(response => {
-        // Cache successful responses
         if (response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
@@ -120,7 +122,7 @@ self.addEventListener('fetch', event => {
       }).catch(() => {
         // Fallback for navigation requests
         if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
+          return caches.match(new URL('./index.html', self.registration.scope).href);
         }
         return new Response('Offline', { status: 503 });
       });
@@ -146,8 +148,8 @@ self.addEventListener('push', event => {
     event.waitUntil(
       self.registration.showNotification(data.title || 'AgroFinca', {
         body: data.body || 'Tienes una nueva notificación',
-        icon: '/icons/icon-192.svg',
-        badge: '/icons/icon-192.svg'
+        icon: './icons/icon-192.svg',
+        badge: './icons/icon-192.svg'
       })
     );
   }

@@ -2,7 +2,7 @@
   "name": "AgroFinca - Gestión Agroforestal",
   "short_name": "AgroFinca",
   "description": "Sistema de gestión agroforestal para plantaciones híbridas. Producción, ventas, costos y análisis financiero offline-first.",
-  "start_url": "/index.html",
+  "start_url": ".",
   "display": "standalone",
   "orientation": "portrait",
   "theme_color": "#2E7D32",

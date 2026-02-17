@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#2E7D32"/>
+  <g transform="translate(256,240)">
+    <!-- Main leaf -->
+    <path d="M0,-150 C75,-140 140,-75 155,0 C140,12 125,20 110,25 C100,-40 55,-90 0,-105 C-55,-90 -100,-40 -110,25 C-125,20 -140,12 -155,0 C-140,-75 -75,-140 0,-150Z" fill="#66BB6A"/>
+    <!-- Leaf veins -->
+    <line x1="0" y1="-140" x2="0" y2="25" stroke="#2E7D32" stroke-width="6"/>
+    <line x1="0" y1="-90" x2="50" y2="-50" stroke="#2E7D32" stroke-width="4"/>
+    <line x1="0" y1="-90" x2="-50" y2="-50" stroke="#2E7D32" stroke-width="4"/>
+    <line x1="0" y1="-50" x2="40" y2="-20" stroke="#2E7D32" stroke-width="4"/>
+    <line x1="0" y1="-50" x2="-40" y2="-20" stroke="#2E7D32" stroke-width="4"/>
+    <line x1="0" y1="-10" x2="30" y2="10" stroke="#2E7D32" stroke-width="3"/>
+    <line x1="0" y1="-10" x2="-30" y2="10" stroke="#2E7D32" stroke-width="3"/>
+    <!-- Stem -->
+    <path d="M0,25 C0,80 -15,140 -25,175" stroke="#4CAF50" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <!-- Small leaf on stem -->
+    <path d="M-10,100 C-50,75 -40,40 -8,70" stroke="#81C784" stroke-width="4" fill="#81C784"/>
+    <!-- Small leaf on stem (right) -->
+    <path d="M-5,60 C25,45 30,25 -2,50" stroke="#A5D6A7" stroke-width="3" fill="#A5D6A7"/>
+  </g>
+  <!-- Text -->
+  <text x="256" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="white">AgroFinca</text>
+</svg>

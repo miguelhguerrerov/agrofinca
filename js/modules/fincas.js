@@ -148,11 +148,13 @@ const FincasModule = (() => {
         </div>
       </div>
       <div class="form-group">
-        <label>Coordenadas centrales (opcional)</label>
-        <div class="form-row">
-          <input type="number" step="any" id="finca-lat" value="${finca?.latitud || ''}" placeholder="Latitud">
-          <input type="number" step="any" id="finca-lng" value="${finca?.longitud || ''}" placeholder="Longitud">
-          <button class="btn btn-outline btn-sm" id="btn-get-location" type="button">📍 GPS</button>
+        <label>📍 Ubicación en mapa</label>
+        <p class="form-hint">Haz clic en el mapa para marcar la ubicación, o usa el botón GPS para obtener tu posición actual.</p>
+        <div id="finca-location-map" class="map-container" style="height:250px; margin-bottom:0.5rem;"></div>
+        <div class="form-row" style="align-items:center;">
+          <input type="number" step="any" id="finca-lat" value="${finca?.latitud || ''}" placeholder="Latitud" style="flex:1;">
+          <input type="number" step="any" id="finca-lng" value="${finca?.longitud || ''}" placeholder="Longitud" style="flex:1;">
+          <button class="btn btn-outline btn-sm" id="btn-get-location" type="button" style="white-space:nowrap;">📍 GPS</button>
         </div>
       </div>
     `;
@@ -161,14 +163,81 @@ const FincasModule = (() => {
        ${isEdit ? '<button class="btn btn-danger btn-sm" id="btn-delete-finca">🗑 Eliminar</button>' : ''}
        <button class="btn btn-primary" id="btn-save-finca">${isEdit ? 'Actualizar' : 'Crear Finca'}</button>`);
 
+    // Interactive location picker map
+    let pickerMap = null;
+    let pickerMarker = null;
+
+    function updatePickerMarker(lat, lng) {
+      if (pickerMarker) {
+        pickerMarker.setLatLng([lat, lng]);
+      } else if (pickerMap) {
+        pickerMarker = L.marker([lat, lng], { draggable: true }).addTo(pickerMap);
+        pickerMarker.on('dragend', () => {
+          const pos = pickerMarker.getLatLng();
+          document.getElementById('finca-lat').value = pos.lat.toFixed(6);
+          document.getElementById('finca-lng').value = pos.lng.toFixed(6);
+        });
+      }
+      document.getElementById('finca-lat').value = lat.toFixed(6);
+      document.getElementById('finca-lng').value = lng.toFixed(6);
+    }
+
+    setTimeout(() => {
+      const mapEl = document.getElementById('finca-location-map');
+      if (!mapEl || typeof L === 'undefined') return;
+
+      const initLat = finca?.latitud || -1.8312;
+      const initLng = finca?.longitud || -79.9345;
+      const initZoom = finca?.latitud ? 16 : 6;
+
+      pickerMap = createMapWithLayers('finca-location-map', initLat, initLng, initZoom);
+      if (!pickerMap) return;
+
+      // Add existing marker if editing
+      if (finca?.latitud && finca?.longitud) {
+        pickerMarker = L.marker([finca.latitud, finca.longitud], { draggable: true }).addTo(pickerMap);
+        pickerMarker.on('dragend', () => {
+          const pos = pickerMarker.getLatLng();
+          document.getElementById('finca-lat').value = pos.lat.toFixed(6);
+          document.getElementById('finca-lng').value = pos.lng.toFixed(6);
+        });
+      }
+
+      // Click to place marker
+      pickerMap.on('click', (e) => {
+        updatePickerMarker(e.latlng.lat, e.latlng.lng);
+        pickerMap.panTo(e.latlng);
+      });
+
+      setTimeout(() => pickerMap.invalidateSize(), 200);
+    }, 200);
+
     document.getElementById('btn-get-location').addEventListener('click', () => {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(pos => {
-          document.getElementById('finca-lat').value = pos.coords.latitude.toFixed(6);
-          document.getElementById('finca-lng').value = pos.coords.longitude.toFixed(6);
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          document.getElementById('finca-lat').value = lat.toFixed(6);
+          document.getElementById('finca-lng').value = lng.toFixed(6);
+          if (pickerMap) {
+            updatePickerMarker(lat, lng);
+            pickerMap.setView([lat, lng], 16);
+          }
           App.showToast('Ubicación obtenida', 'success');
         }, () => App.showToast('No se pudo obtener ubicación', 'warning'));
       }
+    });
+
+    // Sync manual lat/lng input to marker
+    ['finca-lat', 'finca-lng'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => {
+        const lat = parseFloat(document.getElementById('finca-lat').value);
+        const lng = parseFloat(document.getElementById('finca-lng').value);
+        if (!isNaN(lat) && !isNaN(lng) && pickerMap) {
+          updatePickerMarker(lat, lng);
+          pickerMap.setView([lat, lng], 16);
+        }
+      });
     });
 
     document.getElementById('btn-delete-finca')?.addEventListener('click', async () => {
@@ -206,6 +275,7 @@ const FincasModule = (() => {
           await AgroDB.seedDefaultCrops(newFinca.id);
           App.showToast('Finca creada exitosamente', 'success');
         }
+        if (pickerMap) { pickerMap.remove(); pickerMap = null; }
         App.closeModal();
         await App.loadUserFincas();
         App.navigateTo('fincas');

@@ -338,8 +338,15 @@ const App = (() => {
 
   // Screen management
   function showScreen(name) {
-    document.getElementById('auth-screen').style.display = name === 'auth' ? 'flex' : 'none';
-    document.getElementById('app-screen').style.display = name === 'app' ? 'block' : 'none';
+    const authScreen = document.getElementById('auth-screen');
+    const appScreen = document.getElementById('app-screen');
+    if (name === 'auth') {
+      authScreen.classList.remove('screen-hidden');
+      appScreen.classList.add('screen-hidden');
+    } else {
+      authScreen.classList.add('screen-hidden');
+      appScreen.classList.remove('screen-hidden');
+    }
   }
 
   // Sync UI

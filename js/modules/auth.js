@@ -129,17 +129,30 @@ const AuthModule = (() => {
         const result = await SupabaseClient.signUp(email, password, name);
         if (result.user) userId = result.user.id;
 
-        // Create user profile with free plan
-        await SupabaseClient.upsertUserProfile({
-          id: userId,
-          email: email,
-          nombre: name,
-          plan: AppConfig.PLAN_FREE,
-          is_admin: false,
-          farm_count: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+        // If signup didn't return a session (email confirmation enabled),
+        // auto-login to get tokens
+        if (!SupabaseClient.hasSession()) {
+          try {
+            await SupabaseClient.signIn(email, password);
+          } catch (e) {
+            // If login fails (email not confirmed), continue in offline mode
+            console.warn('Auto-login after signup failed:', e.message);
+          }
+        }
+
+        // Create user profile with free plan (only if we have a session)
+        if (SupabaseClient.hasSession()) {
+          await SupabaseClient.upsertUserProfile({
+            id: userId,
+            email: email,
+            nombre: name,
+            plan: AppConfig.PLAN_FREE,
+            is_admin: false,
+            farm_count: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        }
       }
 
       // Always save locally

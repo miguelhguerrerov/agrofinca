@@ -68,8 +68,20 @@ const FincasModule = (() => {
       `}
     `;
 
-    document.getElementById('btn-new-finca')?.addEventListener('click', () => showFincaForm());
-    document.getElementById('btn-empty-new-finca')?.addEventListener('click', () => showFincaForm());
+    document.getElementById('btn-new-finca')?.addEventListener('click', async () => {
+      if (typeof PlanGuard !== 'undefined') {
+        const canAdd = await PlanGuard.canAddFarmAsync();
+        if (!canAdd) { PlanGuard.showUpgradePrompt('Fincas ilimitadas'); return; }
+      }
+      showFincaForm();
+    });
+    document.getElementById('btn-empty-new-finca')?.addEventListener('click', async () => {
+      if (typeof PlanGuard !== 'undefined') {
+        const canAdd = await PlanGuard.canAddFarmAsync();
+        if (!canAdd) { PlanGuard.showUpgradePrompt('Fincas ilimitadas'); return; }
+      }
+      showFincaForm();
+    });
     container.querySelectorAll('.btn-manage-finca').forEach(btn => {
       btn.addEventListener('click', () => showFincaDetail(btn.dataset.id));
     });

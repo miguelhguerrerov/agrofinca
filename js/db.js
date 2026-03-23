@@ -5,7 +5,7 @@
 
 const AgroDB = (() => {
   const DB_NAME = 'agrofinca_db';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   let db = null;
 
   // All object stores (tables)
@@ -29,7 +29,10 @@ const AgroDB = (() => {
     'aplicaciones_fitosanitarias',
     'lotes_animales',
     'registros_animales',
-    'sync_queue'
+    'sync_queue',
+    'ai_chat_history',
+    'user_profiles_local',
+    'payment_history'
   ];
 
   // Initialize database
@@ -215,6 +218,28 @@ const AgroDB = (() => {
           store.createIndex('store_name', 'store_name', { unique: false });
           store.createIndex('action', 'action', { unique: false });
           store.createIndex('timestamp', 'timestamp', { unique: false });
+        }
+
+        // --- ai_chat_history (historial de chat IA) ---
+        if (!database.objectStoreNames.contains('ai_chat_history')) {
+          const store = database.createObjectStore('ai_chat_history', { keyPath: 'id' });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('fecha', 'fecha', { unique: false });
+          store.createIndex('usuario_id', 'usuario_id', { unique: false });
+        }
+
+        // --- user_profiles_local (perfil local con plan) ---
+        if (!database.objectStoreNames.contains('user_profiles_local')) {
+          const store = database.createObjectStore('user_profiles_local', { keyPath: 'id' });
+          store.createIndex('email', 'email', { unique: true });
+        }
+
+        // --- payment_history (historial de pagos) ---
+        if (!database.objectStoreNames.contains('payment_history')) {
+          const store = database.createObjectStore('payment_history', { keyPath: 'id' });
+          store.createIndex('usuario_id', 'usuario_id', { unique: false });
+          store.createIndex('fecha', 'fecha', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
         }
       };
     });

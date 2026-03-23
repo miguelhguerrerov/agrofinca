@@ -32,7 +32,7 @@ const Charts = (() => {
     return { canvas, ctx, width, height };
   }
 
-  // ---- BAR CHART ----
+  // ---- BAR CHART (vertical + horizontal + stacked) ----
   function barChart(containerId, data, options = {}) {
     const {
       title = '',
@@ -45,6 +45,11 @@ const Charts = (() => {
     const container = document.getElementById(containerId);
     if (!container) return;
     const cWidth = container.clientWidth || 320;
+
+    if (horizontal) {
+      return horizontalBarChart(container, data, { title, height: Math.max(height, data.labels.length * 32 + 60), showValues, cWidth });
+    }
+
     const { ctx, width } = createCanvas(container, cWidth, height);
     if (!ctx) return;
 
@@ -80,11 +85,20 @@ const Charts = (() => {
       }
     } else {
       datasets.forEach(ds => {
-        ds.values.forEach(v => { maxVal = Math.max(maxVal, v || 0); });
+        ds.values.forEach(v => { maxVal = Math.max(maxVal, Math.abs(v) || 0); });
       });
     }
     maxVal = maxVal || 1;
-    const yScale = chartH / (maxVal * 1.1);
+
+    // Check for negative values
+    let minVal = 0;
+    datasets.forEach(ds => {
+      ds.values.forEach(v => { minVal = Math.min(minVal, v || 0); });
+    });
+
+    const range = (maxVal * 1.1) - (minVal < 0 ? minVal * 1.1 : 0);
+    const yScale = chartH / range;
+    const zeroY = padding.top + (maxVal * 1.1 * yScale);
 
     // Y axis grid
     ctx.strokeStyle = '#E0E0E0';
@@ -97,11 +111,23 @@ const Charts = (() => {
       ctx.lineTo(padding.left + chartW, y);
       ctx.stroke();
 
-      const val = (maxVal * 1.1 / ySteps * i);
+      const val = minVal < 0
+        ? (minVal * 1.1) + (range / ySteps * i)
+        : (maxVal * 1.1 / ySteps * i);
       ctx.fillStyle = '#9E9E9E';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillText(val >= 1000 ? (val / 1000).toFixed(1) + 'k' : Math.round(val), padding.left - 5, y + 3);
+      ctx.fillText(Math.abs(val) >= 1000 ? (val / 1000).toFixed(1) + 'k' : Math.round(val), padding.left - 5, y + 3);
+    }
+
+    // Zero line for mixed pos/neg
+    if (minVal < 0) {
+      ctx.strokeStyle = '#9E9E9E';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, zeroY);
+      ctx.lineTo(padding.left + chartW, zeroY);
+      ctx.stroke();
     }
 
     // Bars
@@ -115,24 +141,28 @@ const Charts = (() => {
       let stackY = 0;
       datasets.forEach((ds, di) => {
         const val = ds.values[i] || 0;
-        const barH = val * yScale;
+        const barH = Math.abs(val) * yScale;
         const x = stacked
           ? padding.left + i * groupWidth + barPadding
           : padding.left + i * groupWidth + barPadding + di * barWidth;
-        const y = padding.top + chartH - barH - (stacked ? stackY * yScale : 0);
+        const y = val >= 0
+          ? zeroY - barH - (stacked ? stackY * yScale : 0)
+          : zeroY + (stacked ? stackY * yScale : 0);
         const bw = stacked ? barWidth : barWidth - 1;
 
-        ctx.fillStyle = ds.color || getColor(di);
+        // Color: green for positive, red for negative (single dataset)
+        const color = datasets.length === 1 && val < 0 ? '#F44336' : (ds.color || getColor(di));
+        ctx.fillStyle = color;
         ctx.fillRect(x, y, bw, barH);
 
-        if (showValues && val > 0 && barH > 14) {
+        if (showValues && Math.abs(val) > 0 && barH > 14) {
           ctx.fillStyle = '#FFFFFF';
           ctx.font = 'bold 9px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(val >= 1000 ? (val / 1000).toFixed(1) + 'k' : Math.round(val), x + bw / 2, y + barH / 2 + 3);
+          ctx.fillText(Math.abs(val) >= 1000 ? (val / 1000).toFixed(1) + 'k' : Math.round(val), x + bw / 2, y + barH / 2 + 3);
         }
 
-        if (stacked) stackY += val;
+        if (stacked) stackY += Math.abs(val);
       });
 
       // X label
@@ -169,6 +199,75 @@ const Charts = (() => {
         lx += ctx.measureText(ds.label || '').width + 25;
       });
     }
+  }
+
+  // ---- HORIZONTAL BAR CHART ----
+  function horizontalBarChart(container, data, opts) {
+    const { title = '', height, showValues = true, cWidth } = opts;
+    const { ctx, width } = createCanvas(container, cWidth, height);
+    if (!ctx) return;
+
+    const padding = { top: title ? 35 : 15, right: 20, bottom: 15, left: 100 };
+    const chartW = width - padding.left - padding.right;
+    const chartH = height - padding.top - padding.bottom;
+
+    if (title) {
+      ctx.fillStyle = '#212121';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(title, width / 2, 18);
+    }
+
+    if (!data.labels || data.labels.length === 0) {
+      ctx.fillStyle = '#9E9E9E';
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Sin datos disponibles', width / 2, height / 2);
+      return;
+    }
+
+    const datasets = Array.isArray(data.datasets) ? data.datasets : [{ values: data.values || [], color: COLORS[0] }];
+    let maxVal = 0;
+    datasets.forEach(ds => ds.values.forEach(v => { maxVal = Math.max(maxVal, Math.abs(v) || 0); }));
+    maxVal = maxVal || 1;
+
+    const barHeight = Math.min(28, (chartH / data.labels.length) * 0.7);
+    const barGap = (chartH / data.labels.length) - barHeight;
+    const xScale = chartW / (maxVal * 1.15);
+
+    data.labels.forEach((label, i) => {
+      const y = padding.top + i * (barHeight + barGap);
+      const val = datasets[0].values[i] || 0;
+      const barW = Math.abs(val) * xScale;
+      const color = val >= 0 ? (datasets[0].color || '#2196F3') : '#F44336';
+
+      // Label
+      ctx.fillStyle = '#616161';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(label.length > 12 ? label.substring(0, 12) + '..' : label, padding.left - 8, y + barHeight / 2 + 4);
+
+      // Bar
+      ctx.fillStyle = color;
+      ctx.fillRect(padding.left, y, barW, barHeight);
+
+      // Value
+      if (showValues) {
+        ctx.fillStyle = barW > 50 ? '#FFFFFF' : '#616161';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = barW > 50 ? 'right' : 'left';
+        const valText = Math.abs(val) >= 1000 ? (val / 1000).toFixed(1) + 'k' : Format.money(val);
+        ctx.fillText(valText, barW > 50 ? padding.left + barW - 5 : padding.left + barW + 5, y + barHeight / 2 + 4);
+      }
+    });
+
+    // Baseline
+    ctx.strokeStyle = '#9E9E9E';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, padding.top);
+    ctx.lineTo(padding.left, padding.top + chartH);
+    ctx.stroke();
   }
 
   // ---- LINE CHART ----
@@ -281,6 +380,21 @@ const Charts = (() => {
     ctx.lineTo(padding.left, padding.top + chartH);
     ctx.lineTo(padding.left + chartW, padding.top + chartH);
     ctx.stroke();
+
+    // Legend
+    if (datasets.length > 1 && datasets[0].label) {
+      let lx = padding.left;
+      const ly = height - 2;
+      ctx.font = '10px sans-serif';
+      datasets.forEach((ds, i) => {
+        ctx.fillStyle = ds.color || getColor(i);
+        ctx.fillRect(lx, ly - 8, 10, 10);
+        ctx.fillStyle = '#616161';
+        ctx.textAlign = 'left';
+        ctx.fillText(ds.label || '', lx + 13, ly);
+        lx += ctx.measureText(ds.label || '').width + 25;
+      });
+    }
   }
 
   // ---- PIE / DONUT CHART ----

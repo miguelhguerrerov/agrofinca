@@ -1,18 +1,22 @@
 // AgroFinca Service Worker - Offline-First PWA
-const CACHE_NAME = 'agrofinca-v3';
+const CACHE_NAME = 'agrofinca-v4';
 
 // Use relative paths - resolved at install time via self.registration.scope
 const STATIC_FILES = [
   './',
   './index.html',
   './css/styles.css',
+  './js/config.js',
   './js/app.js',
   './js/db.js',
   './js/sync.js',
   './js/supabase-client.js',
+  './js/plan-guard.js',
+  './js/gemini-client.js',
   './js/utils/charts.js',
   './js/utils/dates.js',
   './js/utils/format.js',
+  './js/utils/photos.js',
   './js/modules/auth.js',
   './js/modules/fincas.js',
   './js/modules/dashboard.js',
@@ -27,6 +31,8 @@ const STATIC_FILES = [
   './js/modules/apicultura.js',
   './js/modules/animales.js',
   './js/modules/configuracion.js',
+  './js/modules/asistente-ia.js',
+  './js/modules/admin.js',
   './icons/icon-192.svg',
   './icons/icon-512.svg',
   './manifest.json'

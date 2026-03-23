@@ -1,6 +1,7 @@
 // ============================================
 // AgroFinca - Auth Module
 // User registration, login, offline mode
+// With user profiles (plan, admin status)
 // ============================================
 
 const AuthModule = (() => {
@@ -44,10 +45,13 @@ const AuthModule = (() => {
     btn.textContent = 'Ingresando...';
 
     try {
-      if (SupabaseClient.isConfigured()) {
-        // Online login
+      if (SyncEngine.isOnline()) {
+        // Online login via Supabase
         const result = await SupabaseClient.signIn(email, password);
         const supaUser = await SupabaseClient.getUser();
+
+        // Fetch user profile (plan, admin status)
+        const profile = await SupabaseClient.getUserProfile();
 
         // Save/update user locally
         let localUser = await findLocalUserByEmail(email);
@@ -58,7 +62,15 @@ const AuthModule = (() => {
             nombre: supaUser.user_metadata?.nombre || email.split('@')[0],
             rol: 'propietario',
             avatar_iniciales: Format.initials(supaUser.user_metadata?.nombre || email),
+            plan: profile?.plan || AppConfig.PLAN_FREE,
+            is_admin: profile?.is_admin || false,
             created_at: new Date().toISOString()
+          });
+        } else {
+          // Update local user with latest profile info
+          localUser = await AgroDB.update('usuarios', localUser.id, {
+            plan: profile?.plan || localUser.plan || AppConfig.PLAN_FREE,
+            is_admin: profile?.is_admin || false
           });
         }
         currentUser = localUser;
@@ -66,7 +78,7 @@ const AuthModule = (() => {
         // Offline login - check local database
         const localUser = await findLocalUserByEmail(email);
         if (!localUser) {
-          throw new Error('Usuario no encontrado. Configura Supabase o usa modo sin conexión.');
+          throw new Error('Sin conexión. Usuario no encontrado localmente.');
         }
         // Simple password check (hashed locally)
         if (localUser.password_hash !== simpleHash(password)) {
@@ -112,9 +124,22 @@ const AuthModule = (() => {
     try {
       let userId = AgroDB.uuid();
 
-      if (SupabaseClient.isConfigured()) {
+      if (SyncEngine.isOnline()) {
+        // Register in Supabase
         const result = await SupabaseClient.signUp(email, password, name);
         if (result.user) userId = result.user.id;
+
+        // Create user profile with free plan
+        await SupabaseClient.upsertUserProfile({
+          id: userId,
+          email: email,
+          nombre: name,
+          plan: AppConfig.PLAN_FREE,
+          is_admin: false,
+          farm_count: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
       }
 
       // Always save locally
@@ -125,6 +150,8 @@ const AuthModule = (() => {
         rol: 'propietario',
         avatar_iniciales: Format.initials(name),
         password_hash: simpleHash(password),
+        plan: AppConfig.PLAN_FREE,
+        is_admin: false,
         created_at: new Date().toISOString()
       });
 
@@ -150,7 +177,9 @@ const AuthModule = (() => {
         rol: 'propietario',
         avatar_iniciales: 'UL',
         es_offline: true,
-        password_hash: simpleHash('offline')
+        password_hash: simpleHash('offline'),
+        plan: AppConfig.PLAN_FREE,
+        is_admin: false
       });
     }
     currentUser = offlineUser;
@@ -178,7 +207,9 @@ const AuthModule = (() => {
     localStorage.setItem('agrofinca_user', JSON.stringify({
       id: user.id,
       email: user.email,
-      nombre: user.nombre
+      nombre: user.nombre,
+      plan: user.plan || AppConfig.PLAN_FREE,
+      is_admin: user.is_admin || false
     }));
   }
 
@@ -196,9 +227,17 @@ const AuthModule = (() => {
       const localUser = await AgroDB.getById('usuarios', parsed.id);
       if (localUser) {
         currentUser = localUser;
-        // Try to refresh Supabase session
-        if (SupabaseClient.isConfigured() && SupabaseClient.hasSession()) {
-          await SupabaseClient.refreshSession();
+        // Try to refresh Supabase session and update profile
+        if (SyncEngine.isOnline() && SupabaseClient.hasSession()) {
+          const refreshed = await SupabaseClient.refreshSession();
+          if (refreshed) {
+            const profile = await SupabaseClient.getUserProfile();
+            if (profile) {
+              currentUser.plan = profile.plan || currentUser.plan;
+              currentUser.is_admin = profile.is_admin || false;
+              saveSession(currentUser);
+            }
+          }
         }
         return currentUser;
       }
@@ -209,9 +248,9 @@ const AuthModule = (() => {
   }
 
   async function logout() {
-    if (SupabaseClient.isConfigured()) {
+    try {
       await SupabaseClient.signOut();
-    }
+    } catch (e) { /* ignore */ }
     clearSession();
   }
 
@@ -223,7 +262,42 @@ const AuthModule = (() => {
     return currentUser ? currentUser.id : null;
   }
 
+  function isPaid() {
+    return currentUser?.plan === AppConfig.PLAN_PAID;
+  }
+
+  function isAdmin() {
+    return currentUser?.is_admin === true;
+  }
+
+  // Get user role in a specific finca
+  async function getUserRoleInFinca(fincaId) {
+    if (!currentUser) return null;
+    // Check if owner
+    const finca = await AgroDB.getById('fincas', fincaId);
+    if (finca && finca.propietario_id === currentUser.id) {
+      return AppConfig.ROL_PROPIETARIO;
+    }
+    // Check membership
+    const members = await AgroDB.getByIndex('finca_miembros', 'finca_id', fincaId);
+    const membership = members.find(m => m.usuario_id === currentUser.id);
+    return membership ? (membership.rol || AppConfig.ROL_TRABAJADOR) : null;
+  }
+
+  // Check if user can access financial features in a finca
+  async function canAccessFinances(fincaId) {
+    const role = await getUserRoleInFinca(fincaId);
+    return role === AppConfig.ROL_PROPIETARIO;
+  }
+
+  // Check if user can manage members in a finca
+  async function canManageMembers(fincaId) {
+    const role = await getUserRoleInFinca(fincaId);
+    return role === AppConfig.ROL_PROPIETARIO;
+  }
+
   return {
-    init, getUser, getUserId, logout, restoreSession, handleOfflineMode
+    init, getUser, getUserId, logout, restoreSession, handleOfflineMode,
+    isPaid, isAdmin, getUserRoleInFinca, canAccessFinances, canManageMembers
   };
 })();

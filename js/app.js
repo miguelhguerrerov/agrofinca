@@ -22,7 +22,9 @@ const App = (() => {
     lombricompost: () => LombricompostModule,
     apicultura: () => ApiculturaModule,
     animales: () => AnimalesModule,
-    configuracion: () => ConfiguracionModule
+    configuracion: () => ConfiguracionModule,
+    'asistente-ia': () => AsistenteIAModule,
+    admin: () => AdminModule
   };
 
   const pageNames = {
@@ -38,7 +40,9 @@ const App = (() => {
     lombricompost: 'Lombricompost',
     apicultura: 'Apicultura',
     animales: 'Animales',
-    configuracion: 'Configuración'
+    configuracion: 'Configuración',
+    'asistente-ia': 'Asistente IA',
+    admin: 'Panel de Administración'
   };
 
   // Initialize the app
@@ -103,6 +107,18 @@ const App = (() => {
     await loadUserFincas();
     initNavigation();
     initFAB();
+
+    // Show/hide admin nav
+    const adminNav = document.getElementById('admin-nav-item');
+    if (adminNav) {
+      adminNav.style.display = AuthModule.isAdmin() ? '' : 'none';
+    }
+
+    // Show premium badge if not paid
+    const badgeIA = document.getElementById('badge-ia');
+    if (badgeIA) {
+      badgeIA.style.display = AuthModule.isPaid() ? 'none' : '';
+    }
 
     // Start sync
     SyncEngine.setStatusCallback(updateSyncUI);

@@ -49,6 +49,10 @@ const FitosanitarioModule = (() => {
 
       <p class="text-sm text-muted mb-2">Registro de dosificación de agentes fitosanitarios para cultivos, apicultura y lombricompost.</p>
 
+      <div style="margin-bottom:1rem;">
+        <button class="btn btn-outline btn-sm" id="btn-ai-fito">🤖 Recomendación IA</button>
+      </div>
+
       <div class="summary-grid">
         <div class="summary-card">
           <div class="s-icon amber">🧪</div>
@@ -88,6 +92,51 @@ const FitosanitarioModule = (() => {
     `;
 
     document.getElementById('btn-new-aplic')?.addEventListener('click', () => showQuickApplication(fincaId));
+    document.getElementById('btn-ai-fito')?.addEventListener('click', async () => {
+      if (typeof PlanGuard !== 'undefined' && !PlanGuard.checkFeature('Recomendaciones fitosanitarias IA')) return;
+      if (typeof GeminiClient === 'undefined') { App.showToast('IA no disponible', 'warning'); return; }
+      const body = `
+        <div class="form-group">
+          <label>Describe el problema fitosanitario</label>
+          <textarea id="fito-ai-desc" rows="3" placeholder="Ej: Hojas con manchas amarillas en cacao, presencia de insectos pequeños en envés..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Cultivo afectado</label>
+          <input type="text" id="fito-ai-cultivo" placeholder="Ej: Cacao, Plátano, Café...">
+        </div>
+        <div class="form-group">
+          <label>Foto del problema (opcional)</label>
+          <input type="file" id="fito-ai-photo" accept="image/*" capture="environment">
+        </div>
+      `;
+      App.showModal('🤖 Recomendación Fitosanitaria IA', body,
+        `<button class="btn btn-secondary" onclick="App.closeModal()">Cancelar</button>
+         <button class="btn btn-primary" id="btn-fito-ai-send">Consultar IA</button>`);
+      document.getElementById('btn-fito-ai-send').addEventListener('click', async () => {
+        const desc = document.getElementById('fito-ai-desc').value.trim();
+        const cultivo = document.getElementById('fito-ai-cultivo').value.trim();
+        const photoInput = document.getElementById('fito-ai-photo');
+        if (!desc) { App.showToast('Describe el problema', 'warning'); return; }
+        App.showToast('Consultando IA...', 'info');
+        try {
+          let result;
+          if (photoInput.files.length > 0) {
+            const reader = new FileReader();
+            const base64 = await new Promise(resolve => {
+              reader.onload = e => resolve(e.target.result.split(',')[1]);
+              reader.readAsDataURL(photoInput.files[0]);
+            });
+            result = await GeminiClient.analyzeImage(base64, `Problema fitosanitario en ${cultivo}: ${desc}. Identifica la plaga/enfermedad y recomienda tratamiento con dosis.`);
+          } else {
+            result = await GeminiClient.phytosanitaryRecommendation({ cultivo, problema: desc });
+          }
+          App.closeModal();
+          App.showModal('🤖 Diagnóstico IA', `<div class="ai-response">${result.text || result}</div>`, '<button class="btn btn-secondary" onclick="App.closeModal()">Cerrar</button>');
+        } catch (e) {
+          App.showToast('Error: ' + e.message, 'error');
+        }
+      });
+    });
     container.querySelectorAll('.btn-edit-aplic').forEach(btn => {
       btn.addEventListener('click', async () => {
         const a = await AgroDB.getById('aplicaciones_fitosanitarias', btn.dataset.id);

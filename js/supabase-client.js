@@ -1,25 +1,15 @@
 // ============================================
 // AgroFinca - Supabase Client (Lightweight)
 // Cloud sync layer using REST API
+// Uses centralized AppConfig
 // ============================================
 
 const SupabaseClient = (() => {
-  // Configuration - user must set these in Configuración
-  let SUPABASE_URL = localStorage.getItem('agrofinca_supabase_url') || '';
-  let SUPABASE_ANON_KEY = localStorage.getItem('agrofinca_supabase_key') || '';
+  // Use centralized configuration
+  const SUPABASE_URL = AppConfig.SUPABASE_URL;
+  const SUPABASE_ANON_KEY = AppConfig.SUPABASE_ANON_KEY;
   let accessToken = localStorage.getItem('agrofinca_access_token') || '';
   let refreshToken = localStorage.getItem('agrofinca_refresh_token') || '';
-
-  function isConfigured() {
-    return !!(SUPABASE_URL && SUPABASE_ANON_KEY);
-  }
-
-  function configure(url, key) {
-    SUPABASE_URL = url;
-    SUPABASE_ANON_KEY = key;
-    localStorage.setItem('agrofinca_supabase_url', url);
-    localStorage.setItem('agrofinca_supabase_key', key);
-  }
 
   function getHeaders() {
     const headers = {
@@ -128,7 +118,7 @@ const SupabaseClient = (() => {
 
   // REST API calls (for sync)
   async function select(table, filters = {}) {
-    if (!isConfigured() || !accessToken) return [];
+    if (!accessToken) return [];
     let url = `${SUPABASE_URL}/rest/v1/${table}?select=*`;
     for (const [key, value] of Object.entries(filters)) {
       url += `&${key}=eq.${encodeURIComponent(value)}`;
@@ -144,7 +134,7 @@ const SupabaseClient = (() => {
   }
 
   async function upsert(table, record) {
-    if (!isConfigured() || !accessToken) return null;
+    if (!accessToken) return null;
     try {
       const headers = getHeaders();
       headers['Prefer'] = 'resolution=merge-duplicates,return=representation';
@@ -166,7 +156,7 @@ const SupabaseClient = (() => {
   }
 
   async function deleteRecord(table, id) {
-    if (!isConfigured() || !accessToken) return false;
+    if (!accessToken) return false;
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
         method: 'DELETE',
@@ -181,7 +171,7 @@ const SupabaseClient = (() => {
 
   // Upload photo to Supabase Storage
   async function uploadPhoto(bucket, filePath, fileData, contentType) {
-    if (!isConfigured() || !accessToken) return null;
+    if (!accessToken) return null;
     try {
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${filePath}`, {
         method: 'POST',
@@ -202,7 +192,7 @@ const SupabaseClient = (() => {
 
   // Get records updated after a timestamp
   async function getUpdatedSince(table, since, fincaId) {
-    if (!isConfigured() || !accessToken) return [];
+    if (!accessToken) return [];
     let url = `${SUPABASE_URL}/rest/v1/${table}?select=*&updated_at=gte.${encodeURIComponent(since)}`;
     if (fincaId) {
       url += `&finca_id=eq.${fincaId}`;
@@ -217,9 +207,46 @@ const SupabaseClient = (() => {
     }
   }
 
+  // Call Supabase Edge Function
+  async function callEdgeFunction(functionName, body = {}) {
+    if (!accessToken) throw new Error('No authenticated');
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'apikey': SUPABASE_ANON_KEY
+      },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Edge Function error ${res.status}: ${errText}`);
+    }
+    return await res.json();
+  }
+
+  // Fetch user profile (plan, admin status)
+  async function getUserProfile() {
+    if (!accessToken) return null;
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=*`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      const profiles = await res.json();
+      return profiles[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Create or update user profile
+  async function upsertUserProfile(profile) {
+    return upsert('user_profiles', profile);
+  }
+
   return {
-    isConfigured,
-    configure,
     signUp,
     signIn,
     signOut,
@@ -231,6 +258,9 @@ const SupabaseClient = (() => {
     deleteRecord,
     uploadPhoto,
     getUpdatedSince,
-    clearTokens
+    clearTokens,
+    callEdgeFunction,
+    getUserProfile,
+    upsertUserProfile
   };
 })();

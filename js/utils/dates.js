@@ -100,6 +100,18 @@ const DateUtils = (() => {
     };
   }
 
+  // Get previous month range
+  function previousMonthRange() {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0]
+    };
+  }
+
   // Get current year range
   function currentYearRange() {
     const y = new Date().getFullYear();
@@ -165,7 +177,7 @@ const DateUtils = (() => {
   return {
     today, now, nextWeekend, isWeekend, weekendsInMonth, weekendsBetween,
     daysBetween, addDays, estimatedHarvest, cycleProgress,
-    currentMonthRange, currentYearRange, lastMonths,
+    currentMonthRange, previousMonthRange, currentYearRange, lastMonths,
     monthName, monthYear, groupByMonth, nextNWeekends, weekdayName
   };
 })();

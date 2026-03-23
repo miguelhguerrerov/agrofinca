@@ -45,6 +45,7 @@ const InspeccionesModule = (() => {
             <div class="flex gap-1 mt-1">
               <button class="btn btn-sm btn-outline btn-view-insp" data-id="${insp.id}">👁️ Ver</button>
               <button class="btn btn-sm btn-outline btn-edit-insp" data-id="${insp.id}">✏️</button>
+              <button class="btn btn-sm btn-outline btn-ai-insp" data-id="${insp.id}" title="Analizar con IA">🤖 IA</button>
               <button class="btn btn-sm btn-danger btn-del-insp" data-id="${insp.id}">🗑</button>
             </div>
           </div>
@@ -59,6 +60,32 @@ const InspeccionesModule = (() => {
       btn.addEventListener('click', async () => {
         const insp = await AgroDB.getById('inspecciones', btn.dataset.id);
         showQuickInspection(fincaId, insp);
+      });
+    });
+    container.querySelectorAll('.btn-ai-insp').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (typeof PlanGuard !== 'undefined' && !PlanGuard.checkFeature('Análisis IA de inspecciones')) return;
+        const insp = await AgroDB.getById('inspecciones', btn.dataset.id);
+        if (!insp) return;
+        const fotos = await AgroDB.getByIndex('fotos_inspeccion', 'inspeccion_id', insp.id);
+        const context = `Inspección: ${insp.titulo}. Estado: ${insp.estado_general}. Follaje: ${insp.estado_follaje || 'N/A'}. Plagas: ${insp.plagas_detectadas || 'ninguna'}. Enfermedades: ${insp.enfermedades_detectadas || 'ninguna'}. Suelo: ${insp.estado_suelo || 'N/A'}. Observaciones: ${insp.observaciones || 'ninguna'}.`;
+        if (fotos.length > 0 && typeof GeminiClient !== 'undefined') {
+          App.showToast('Analizando con IA...', 'info');
+          try {
+            const result = await GeminiClient.analyzeImage(fotos[0].data_url.split(',')[1], `Analiza esta foto de inspección agrícola. ${context} Proporciona diagnóstico y recomendaciones.`);
+            App.showModal('🤖 Análisis IA', `<div class="ai-response">${result.text || result}</div>`, '<button class="btn btn-secondary" onclick="App.closeModal()">Cerrar</button>');
+          } catch (e) {
+            App.showToast('Error al analizar: ' + e.message, 'error');
+          }
+        } else if (typeof GeminiClient !== 'undefined') {
+          App.showToast('Analizando con IA...', 'info');
+          try {
+            const result = await GeminiClient.chat([{ role: 'user', content: `Como agrónomo experto, analiza esta inspección y da recomendaciones: ${context}` }]);
+            App.showModal('🤖 Análisis IA', `<div class="ai-response">${result.text || result}</div>`, '<button class="btn btn-secondary" onclick="App.closeModal()">Cerrar</button>');
+          } catch (e) {
+            App.showToast('Error al analizar: ' + e.message, 'error');
+          }
+        }
       });
     });
     container.querySelectorAll('.btn-del-insp').forEach(btn => {

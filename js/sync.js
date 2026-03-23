@@ -1,6 +1,7 @@
 // ============================================
 // AgroFinca - Sync Engine
 // Bidirectional sync: IndexedDB <-> Supabase
+// Offline-first: IndexedDB is primary DB
 // ============================================
 
 const SyncEngine = (() => {
@@ -14,7 +15,8 @@ const SyncEngine = (() => {
     'usuarios', 'fincas', 'finca_miembros', 'areas', 'cultivos_catalogo',
     'ciclos_productivos', 'cosechas', 'ventas', 'costos', 'colmenas',
     'inspecciones_colmena', 'camas_lombricompost', 'registros_lombricompost',
-    'tareas', 'inspecciones', 'fotos_inspeccion', 'aplicaciones_fitosanitarias'
+    'tareas', 'inspecciones', 'fotos_inspeccion', 'aplicaciones_fitosanitarias',
+    'lotes_animales', 'registros_animales'
   ];
 
   function setStatusCallback(callback) {
@@ -32,13 +34,13 @@ const SyncEngine = (() => {
   // Start periodic sync
   function startAutoSync(intervalMs = 30000) {
     stopAutoSync();
-    // Initial sync
-    if (isOnline() && SupabaseClient.isConfigured() && SupabaseClient.hasSession()) {
+    // Initial sync - only if online and has session
+    if (isOnline() && SupabaseClient.hasSession()) {
       setTimeout(() => syncAll(), 2000);
     }
     // Periodic
     syncInterval = setInterval(() => {
-      if (isOnline() && SupabaseClient.isConfigured() && SupabaseClient.hasSession()) {
+      if (isOnline() && SupabaseClient.hasSession()) {
         syncAll();
       }
     }, intervalMs);
@@ -59,7 +61,7 @@ const SyncEngine = (() => {
 
   function handleOnline() {
     updateStatus('online', 0);
-    if (SupabaseClient.isConfigured() && SupabaseClient.hasSession()) {
+    if (SupabaseClient.hasSession()) {
       syncAll();
     }
   }
@@ -70,7 +72,7 @@ const SyncEngine = (() => {
 
   // Main sync function
   async function syncAll() {
-    if (isSyncing || !isOnline() || !SupabaseClient.isConfigured()) return;
+    if (isSyncing || !isOnline()) return;
     isSyncing = true;
     try {
       updateStatus('syncing', 0);
@@ -147,21 +149,8 @@ const SyncEngine = (() => {
         for (const remote of remoteRecords) {
           const local = await AgroDB.getById(table, remote.id);
           if (!local) {
-            // New remote record - add locally
-            await new Promise((resolve, reject) => {
-              const tx = indexedDB.open('agrofinca_db').onsuccess = (e) => {
-                // Use direct put to avoid adding to sync queue
-                const database = e.target.result;
-                const store = database.transaction(table, 'readwrite').objectStore(table);
-                remote.synced = true;
-                const req = store.put(remote);
-                req.onsuccess = () => resolve();
-                req.onerror = () => reject(req.error);
-              };
-            }).catch(() => {
-              // Fallback: use AgroDB but mark as synced
-              return AgroDB.add(table, { ...remote, synced: true });
-            });
+            // New remote record - add locally without triggering sync queue
+            await directPut(table, { ...remote, synced: true });
           } else if (new Date(remote.updated_at) > new Date(local.updated_at)) {
             // Remote is newer - update locally (last-write-wins)
             await directPut(table, { ...remote, synced: true });
@@ -202,7 +191,6 @@ const SyncEngine = (() => {
     const pending = await AgroDB.getPendingSyncCount();
     return {
       online: isOnline(),
-      configured: SupabaseClient.isConfigured(),
       syncing: isSyncing,
       pendingCount: pending,
       lastSync: lastSyncTimestamp

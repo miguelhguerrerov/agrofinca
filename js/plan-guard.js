@@ -26,12 +26,13 @@ const PlanGuard = (() => {
   }
 
   function showUpgradePrompt(featureName) {
+    const safeName = AuthModule.sanitizeText(featureName);
     const bodyHTML = `
       <div style="text-align:center; padding: 1rem;">
         <div style="font-size:3rem; margin-bottom:1rem;">⭐</div>
         <h3 style="margin-bottom:0.5rem;">Funcionalidad Premium</h3>
         <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
-          <strong>${featureName}</strong> está disponible en el plan Premium.
+          <strong>${safeName}</strong> está disponible en el plan Premium.
           Actualiza tu cuenta para desbloquear todas las funcionalidades.
         </p>
         <div style="background:var(--surface); border-radius:12px; padding:1rem; margin-bottom:1.5rem; text-align:left;">

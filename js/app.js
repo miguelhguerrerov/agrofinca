@@ -80,7 +80,7 @@ const App = (() => {
         <div class="loading-content">
           <div class="loading-icon">⚠️</div>
           <h1>Error</h1>
-          <p>${err.message}</p>
+          <p>Error al iniciar la aplicación</p>
           <button onclick="location.reload()" style="margin-top:1rem;padding:0.5rem 1rem;background:white;border:none;border-radius:6px;cursor:pointer;">Reintentar</button>
         </div>`;
     }

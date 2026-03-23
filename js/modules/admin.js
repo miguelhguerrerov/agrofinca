@@ -157,13 +157,14 @@ const AdminModule = (() => {
       return;
     }
 
+    const esc = (s) => AuthModule.sanitizeText(s || '');
     container.innerHTML = users.map(user => `
       <div class="data-list-item admin-user-item">
         <div class="data-list-left">
-          <div class="avatar-sm">${Format.initials(user.nombre || user.email)}</div>
+          <div class="avatar-sm">${esc(Format.initials(user.nombre || user.email))}</div>
           <div>
-            <div class="data-list-title">${user.nombre || 'Sin nombre'}</div>
-            <div class="data-list-subtitle">${user.email || ''}</div>
+            <div class="data-list-title">${esc(user.nombre) || 'Sin nombre'}</div>
+            <div class="data-list-subtitle">${esc(user.email)}</div>
           </div>
         </div>
         <div class="data-list-right">

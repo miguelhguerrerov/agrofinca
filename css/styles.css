@@ -94,22 +94,43 @@ input, select, textarea, button {
 @keyframes loadProgress { 0% { width: 0; } 100% { width: 100%; } }
 
 /* --- Auth Screen --- */
-.auth-container {
-  min-height: 100vh; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; padding: 1.5rem;
-  background: linear-gradient(160deg, var(--green-50), var(--white));
+#auth-screen {
+  width: 100%;
 }
-.auth-logo { text-align: center; margin-bottom: 2rem; }
-.auth-icon { font-size: 4rem; }
-.auth-logo h1 { font-size: 2rem; color: var(--green-700); }
-.auth-logo p { color: var(--gray-700); }
+#auth-screen .auth-container {
+  flex: 1;
+}
+.auth-container {
+  min-height: 100vh; min-height: 100dvh;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 1.5rem;
+  background: linear-gradient(160deg, var(--green-50) 0%, var(--white) 50%, var(--green-50) 100%);
+}
+.auth-logo { text-align: center; margin-bottom: 1.5rem; }
+.auth-icon { font-size: 4rem; line-height: 1; }
+.auth-logo h1 { font-size: 2rem; color: var(--green-700); margin-top: 0.25rem; }
+.auth-logo p { color: var(--gray-700); font-size: 0.95rem; }
 .auth-form {
-  width: 100%; max-width: 400px;
-  background: var(--white); padding: 1.5rem;
+  width: 100%; max-width: 420px;
+  background: var(--white); padding: 2rem;
   border-radius: var(--radius-lg); box-shadow: var(--shadow-2);
 }
-.auth-form h2 { text-align: center; margin-bottom: 1.25rem; color: var(--green-900); }
-.auth-switch { text-align: center; margin-top: 1rem; font-size: 0.9rem; color: var(--gray-700); }
+.auth-form h2 { text-align: center; margin-bottom: 1.25rem; color: var(--green-900); font-size: 1.35rem; }
+.auth-switch { text-align: center; margin-top: 1.25rem; font-size: 0.9rem; color: var(--gray-700); }
+.auth-switch a { font-weight: 600; }
+
+/* Auth screen responsive */
+@media (max-width: 480px) {
+  .auth-container { padding: 1rem; justify-content: flex-start; padding-top: 2rem; }
+  .auth-logo { margin-bottom: 1rem; }
+  .auth-icon { font-size: 3rem; }
+  .auth-logo h1 { font-size: 1.75rem; }
+  .auth-form { padding: 1.5rem 1.25rem; box-shadow: var(--shadow-1); }
+}
+@media (min-height: 700px) and (max-width: 480px) {
+  .auth-container { justify-content: center; padding-top: 1rem; }
+}
 
 /* --- Form Elements --- */
 .form-group { margin-bottom: 1rem; }

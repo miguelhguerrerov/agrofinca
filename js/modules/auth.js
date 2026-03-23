@@ -155,18 +155,27 @@ const AuthModule = (() => {
         }
       }
 
-      // Always save locally
-      const localUser = await AgroDB.add('usuarios', {
-        id: userId,
-        email: email,
-        nombre: name,
-        rol: 'propietario',
-        avatar_iniciales: Format.initials(name),
-        password_hash: simpleHash(password),
-        plan: AppConfig.PLAN_FREE,
-        is_admin: false,
-        created_at: new Date().toISOString()
-      });
+      // Always save locally (update if exists, add if new)
+      let localUser = await findLocalUserByEmail(email);
+      if (localUser) {
+        localUser = await AgroDB.update('usuarios', localUser.id, {
+          nombre: name,
+          password_hash: simpleHash(password),
+          plan: AppConfig.PLAN_FREE
+        });
+      } else {
+        localUser = await AgroDB.add('usuarios', {
+          id: userId,
+          email: email,
+          nombre: name,
+          rol: 'propietario',
+          avatar_iniciales: Format.initials(name),
+          password_hash: simpleHash(password),
+          plan: AppConfig.PLAN_FREE,
+          is_admin: false,
+          created_at: new Date().toISOString()
+        });
+      }
 
       currentUser = localUser;
       saveSession(currentUser);

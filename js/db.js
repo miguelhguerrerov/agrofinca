@@ -5,7 +5,7 @@
 
 const AgroDB = (() => {
   const DB_NAME = 'agrofinca_db';
-  const DB_VERSION = 3;
+  const DB_VERSION = 4;
   let db = null;
 
   // All object stores (tables)
@@ -458,56 +458,183 @@ const AgroDB = (() => {
     }
   }
 
-  // Seed default crop catalog
+  // Seed default crop catalog — 20 cultivos principales de Ecuador
+  // Fuente: ESPAC 2022-2023 / INEC / MAG Ecuador
   async function seedDefaultCrops(fincaId) {
     const defaults = [
       {
+        nombre: 'Banano',
+        tipo: 'perenne', unidad_produccion: 'kg', ciclo_dias: 0,
+        color: '#FFD600', icono: '🍌',
+        rendimiento_referencia: 36.28, unidad_rendimiento: 't/ha',
+        descripcion: 'Banano de exportación. Principal cultivo de Ecuador.',
+        es_predeterminado: true
+      },
+      {
         nombre: 'Plátano Barraganete',
-        tipo: 'perenne',
-        unidad_produccion: 'racimos',
-        ciclo_dias: 0,
-        color: '#2E7D32',
-        icono: '🍌',
+        tipo: 'perenne', unidad_produccion: 'racimos', ciclo_dias: 0,
+        color: '#2E7D32', icono: '🍌',
+        rendimiento_referencia: 7.49, unidad_rendimiento: 't/ha',
         descripcion: 'Plátano de cocción tipo barraganete. Cultivo perenne con cosecha continua.',
         es_predeterminado: true
       },
       {
+        nombre: 'Cacao',
+        tipo: 'perenne', unidad_produccion: 'kg', ciclo_dias: 0,
+        color: '#5D4037', icono: '🫘',
+        rendimiento_referencia: 0.66, unidad_rendimiento: 't/ha',
+        descripcion: 'Cacao fino de aroma. Ecuador es el mayor exportador mundial de cacao fino.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Café',
+        tipo: 'perenne', unidad_produccion: 'kg', ciclo_dias: 0,
+        color: '#4E342E', icono: '☕',
+        rendimiento_referencia: 0.27, unidad_rendimiento: 't/ha',
+        descripcion: 'Café arábigo y robusta. Cultivo de altura.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Arroz',
+        tipo: 'cereal', unidad_produccion: 'kg', ciclo_dias: 120,
+        color: '#F5F5DC', icono: '🌾',
+        rendimiento_referencia: 5.14, unidad_rendimiento: 't/ha',
+        descripcion: 'Arroz paddy. Principal cereal de la costa ecuatoriana.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Maíz Duro',
+        tipo: 'cereal', unidad_produccion: 'kg', ciclo_dias: 120,
+        color: '#FFA000', icono: '🌽',
+        rendimiento_referencia: 6.35, unidad_rendimiento: 't/ha',
+        descripcion: 'Maíz duro seco para alimento animal y agroindustria.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Maíz Suave',
+        tipo: 'cereal', unidad_produccion: 'kg', ciclo_dias: 150,
+        color: '#FFD54F', icono: '🌽',
+        rendimiento_referencia: 1.08, unidad_rendimiento: 't/ha',
+        descripcion: 'Maíz suave de sierra para consumo humano.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Caña de Azúcar',
+        tipo: 'perenne', unidad_produccion: 'toneladas', ciclo_dias: 0,
+        color: '#8BC34A', icono: '🎋',
+        rendimiento_referencia: 68.41, unidad_rendimiento: 't/ha',
+        descripcion: 'Caña de azúcar para producción de panela y azúcar.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Papa',
+        tipo: 'estacional', unidad_produccion: 'kg', ciclo_dias: 150,
+        color: '#8D6E63', icono: '🥔',
+        rendimiento_referencia: 27.87, unidad_rendimiento: 't/ha',
+        descripcion: 'Papa de sierra ecuatoriana. Múltiples variedades.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Tomate Riñón',
+        tipo: 'hortaliza', unidad_produccion: 'kg', ciclo_dias: 120,
+        color: '#F44336', icono: '🍅',
+        rendimiento_referencia: 33.51, unidad_rendimiento: 't/ha',
+        descripcion: 'Tomate riñón bajo invernadero o campo abierto.',
+        es_predeterminado: true
+      },
+      {
         nombre: 'Pimiento Verde',
-        tipo: 'estacional',
-        unidad_produccion: 'kg',
-        ciclo_dias: 120,
-        color: '#4CAF50',
-        icono: '🫑',
-        descripcion: 'Pimiento verde de ciclo estacional. Cosecha aproximada a los 120 días.',
+        tipo: 'hortaliza', unidad_produccion: 'kg', ciclo_dias: 90,
+        color: '#4CAF50', icono: '🫑',
+        rendimiento_referencia: 22.08, unidad_rendimiento: 't/ha',
+        descripcion: 'Pimiento verde de ciclo estacional.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Cebolla Colorada',
+        tipo: 'hortaliza', unidad_produccion: 'kg', ciclo_dias: 150,
+        color: '#9C27B0', icono: '🧅',
+        rendimiento_referencia: 14.37, unidad_rendimiento: 't/ha',
+        descripcion: 'Cebolla colorada perla. Cultivo de sierra.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Zanahoria',
+        tipo: 'hortaliza', unidad_produccion: 'kg', ciclo_dias: 120,
+        color: '#FF5722', icono: '🥕',
+        rendimiento_referencia: 25.0, unidad_rendimiento: 't/ha',
+        descripcion: 'Zanahoria amarilla. Hortaliza de sierra.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Fréjol',
+        tipo: 'leguminosa', unidad_produccion: 'kg', ciclo_dias: 90,
+        color: '#795548', icono: '🫘',
+        rendimiento_referencia: 0.63, unidad_rendimiento: 't/ha',
+        descripcion: 'Fréjol seco y tierno. Grano básico ecuatoriano.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Yuca',
+        tipo: 'estacional', unidad_produccion: 'kg', ciclo_dias: 270,
+        color: '#BCAAA4', icono: '🥔',
+        rendimiento_referencia: 21.3, unidad_rendimiento: 't/ha',
+        descripcion: 'Yuca o mandioca. Tubérculo tropical.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Piña',
+        tipo: 'perenne', unidad_produccion: 'kg', ciclo_dias: 0,
+        color: '#FFEB3B', icono: '🍍',
+        rendimiento_referencia: 42.13, unidad_rendimiento: 't/ha',
+        descripcion: 'Piña variedad MD2 (Golden). Fruta de exportación.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Maracuyá',
+        tipo: 'perenne', unidad_produccion: 'kg', ciclo_dias: 0,
+        color: '#FF9800', icono: '🟡',
+        rendimiento_referencia: 6.91, unidad_rendimiento: 't/ha',
+        descripcion: 'Maracuyá para jugo y exportación.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Naranja',
+        tipo: 'frutal', unidad_produccion: 'kg', ciclo_dias: 0,
+        color: '#FF9800', icono: '🍊',
+        rendimiento_referencia: 12.4, unidad_rendimiento: 't/ha',
+        descripcion: 'Naranja dulce. Cítrico perenne.',
+        es_predeterminado: true
+      },
+      {
+        nombre: 'Limón',
+        tipo: 'frutal', unidad_produccion: 'kg', ciclo_dias: 0,
+        color: '#CDDC39', icono: '🍋',
+        rendimiento_referencia: 10.0, unidad_rendimiento: 't/ha',
+        descripcion: 'Limón sutil y tahití. Cítrico perenne.',
         es_predeterminado: true
       },
       {
         nombre: 'Cilantro',
-        tipo: 'rotacion_rapida',
-        unidad_produccion: 'atados',
-        ciclo_dias: 40,
-        color: '#81C784',
-        icono: '🌿',
-        descripcion: 'Cilantro de rotación rápida. Ciclo de 30-45 días.',
+        tipo: 'rotacion_rapida', unidad_produccion: 'atados', ciclo_dias: 50,
+        color: '#81C784', icono: '🌿',
+        rendimiento_referencia: 8.0, unidad_rendimiento: 't/ha',
+        descripcion: 'Cilantro de rotación rápida. Ciclo de 40-60 días.',
         es_predeterminado: true
       },
       {
         nombre: 'Miel de Abeja',
-        tipo: 'apicola',
-        unidad_produccion: 'litros',
-        ciclo_dias: 0,
-        color: '#FFA000',
-        icono: '🍯',
+        tipo: 'apicola', unidad_produccion: 'litros', ciclo_dias: 0,
+        color: '#FFA000', icono: '🍯',
+        rendimiento_referencia: 20, unidad_rendimiento: 'litros/colmena/año',
         descripcion: 'Producción apícola con Apis mellifera.',
         es_predeterminado: true
       },
       {
         nombre: 'Lombricompost',
-        tipo: 'compostaje',
-        unidad_produccion: 'kg',
-        ciclo_dias: 90,
-        color: '#795548',
-        icono: '🪱',
+        tipo: 'compostaje', unidad_produccion: 'kg', ciclo_dias: 90,
+        color: '#795548', icono: '🪱',
+        rendimiento_referencia: null, unidad_rendimiento: null,
         descripcion: 'Humus de lombriz producido con residuos orgánicos.',
         es_predeterminado: true
       }

@@ -1,380 +1,693 @@
 -- ============================================
--- AgroFinca v2.0 - Supabase Schema
+-- AgroFinca v2 - Complete Supabase Schema
 -- Run this in Supabase SQL Editor
+-- Creates all tables, enables RLS, sets policies
 -- ============================================
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- ==========================================
--- Core Tables
--- ==========================================
-
-CREATE TABLE IF NOT EXISTS user_profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT,
-  nombre TEXT,
-  plan TEXT DEFAULT 'free' CHECK (plan IN ('free', 'paid')),
-  plan_expires_at TIMESTAMPTZ,
-  is_admin BOOLEAN DEFAULT FALSE,
-  farm_count INTEGER DEFAULT 0,
-  disabled BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS upgrade_requests (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT,
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS payment_history (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  order_id TEXT,
-  amount REAL,
-  currency TEXT DEFAULT 'USD',
-  payer_email TEXT,
-  status TEXT DEFAULT 'completed',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS usuarios (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email TEXT UNIQUE, nombre TEXT, rol TEXT DEFAULT 'propietario',
-  avatar_iniciales TEXT, plan TEXT DEFAULT 'free', is_admin BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS fincas (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  propietario_id UUID REFERENCES usuarios(id),
-  nombre TEXT NOT NULL, ubicacion TEXT, descripcion TEXT,
-  area_total_m2 REAL DEFAULT 0, sistema_riego TEXT,
-  latitud DOUBLE PRECISION, longitud DOUBLE PRECISION,
-  modificado_por TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS finca_miembros (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  usuario_id UUID REFERENCES usuarios(id),
-  usuario_email TEXT, nombre TEXT, rol TEXT DEFAULT 'trabajador',
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS areas (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  nombre TEXT NOT NULL, cultivo_actual_id UUID, cultivo_actual_nombre TEXT,
-  area_m2 REAL DEFAULT 0, color TEXT DEFAULT '#4CAF50', geojson TEXT, notas TEXT,
-  modificado_por TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS cultivos_catalogo (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  nombre TEXT NOT NULL, tipo TEXT, unidad_produccion TEXT DEFAULT 'kg',
-  ciclo_dias INTEGER DEFAULT 0, color TEXT, icono TEXT, descripcion TEXT,
-  es_predeterminado BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS ciclos_productivos (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  cultivo_id UUID, cultivo_nombre TEXT, area_id UUID, area_nombre TEXT,
-  fecha_inicio DATE, fecha_fin_estimada DATE, fecha_fin_real DATE,
-  ciclo_dias INTEGER DEFAULT 0, estado TEXT DEFAULT 'activo',
-  cantidad_plantas INTEGER DEFAULT 0, notas TEXT, registrado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS cosechas (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  ciclo_id UUID, cultivo_id UUID, cultivo_nombre TEXT,
-  fecha DATE, cantidad REAL DEFAULT 0, unidad TEXT DEFAULT 'kg',
-  calidad TEXT, notas TEXT, registrado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS ventas (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  cultivo_id UUID, producto TEXT, cultivo_nombre TEXT,
-  fecha DATE, cantidad REAL DEFAULT 0, unidad TEXT,
-  precio_unitario REAL DEFAULT 0, total REAL DEFAULT 0,
-  comprador TEXT, forma_pago TEXT DEFAULT 'efectivo', notas TEXT, registrado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS costos (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  categoria TEXT, descripcion TEXT, cultivo_id UUID, cultivo_nombre TEXT,
-  ciclo_id UUID, fecha DATE, cantidad REAL DEFAULT 1, unidad TEXT,
-  costo_unitario REAL DEFAULT 0, total REAL DEFAULT 0,
-  es_mano_obra_familiar BOOLEAN DEFAULT FALSE, notas TEXT, registrado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS colmenas (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  nombre TEXT NOT NULL, tipo TEXT DEFAULT 'langstroth',
-  ubicacion TEXT, estado TEXT DEFAULT 'activa',
-  fecha_instalacion DATE, notas TEXT, modificado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS inspecciones_colmena (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID, colmena_id UUID REFERENCES colmenas(id) ON DELETE CASCADE,
-  colmena_nombre TEXT, fecha DATE, estado_reina TEXT,
-  temperamento TEXT, marcos_cria INTEGER DEFAULT 0, marcos_miel INTEGER DEFAULT 0,
-  enfermedades TEXT, alimentacion BOOLEAN DEFAULT FALSE, tratamiento TEXT,
-  notas TEXT, inspector TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS camas_lombricompost (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  nombre TEXT NOT NULL, largo_m REAL, ancho_m REAL,
-  fecha_inicio DATE, estado TEXT DEFAULT 'alimentando',
-  notas TEXT, modificado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS registros_lombricompost (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID, cama_id UUID REFERENCES camas_lombricompost(id) ON DELETE CASCADE,
-  cama_nombre TEXT, fecha DATE, tipo TEXT, material TEXT,
-  cantidad_kg REAL DEFAULT 0, notas TEXT, registrado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS tareas (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  titulo TEXT NOT NULL, descripcion TEXT,
-  cultivo_id UUID, cultivo_nombre TEXT,
-  fecha_programada DATE, prioridad TEXT DEFAULT 'media',
-  recurrente BOOLEAN DEFAULT FALSE, frecuencia_dias INTEGER DEFAULT 7,
-  estado TEXT DEFAULT 'pendiente',
-  asignado_a TEXT, creado_por TEXT,
-  completada_en TIMESTAMPTZ, completada_por TEXT, notas TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS inspecciones (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  titulo TEXT, fecha DATE, estado_general TEXT,
-  area_id UUID, area_nombre TEXT, ciclo_id UUID, cultivo_nombre TEXT,
-  estado_follaje TEXT, estado_riego TEXT, plagas_detectadas TEXT,
-  enfermedades_detectadas TEXT, estado_suelo TEXT, etapa_fenologica TEXT,
-  observaciones TEXT, fotos_count INTEGER DEFAULT 0, inspector TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS fotos_inspeccion (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  inspeccion_id UUID REFERENCES inspecciones(id) ON DELETE CASCADE,
-  finca_id UUID, data_url TEXT, thumbnail TEXT, nombre TEXT,
-  storage_url TEXT, fecha DATE,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS aplicaciones_fitosanitarias (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  destino TEXT, cultivo_nombre TEXT, ciclo_id UUID, area_id UUID,
-  colmena_id UUID, cama_id UUID, tipo_producto TEXT,
-  nombre_producto TEXT, ingrediente_activo TEXT,
-  fecha DATE, dosis REAL DEFAULT 0, unidad_dosis TEXT,
-  volumen_agua_litros REAL, area_aplicada_m2 REAL, metodo TEXT,
-  categoria_toxicidad TEXT, periodo_carencia_dias INTEGER DEFAULT 0,
-  motivo TEXT, notas TEXT, aplicado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS lotes_animales (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
-  nombre TEXT NOT NULL, tipo_animal TEXT, raza TEXT,
-  cantidad_inicial INTEGER DEFAULT 0, cantidad_actual INTEGER DEFAULT 0,
-  fecha_ingreso DATE, estado TEXT DEFAULT 'activo',
-  ubicacion TEXT, proveedor TEXT, costo_adquisicion REAL DEFAULT 0,
-  notas TEXT, modificado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS registros_animales (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID, lote_id UUID REFERENCES lotes_animales(id) ON DELETE CASCADE,
-  lote_nombre TEXT, fecha DATE, tipo TEXT,
-  tipo_alimento TEXT, cantidad REAL DEFAULT 0, cantidad_kg REAL DEFAULT 0,
-  peso_promedio_kg REAL, muestra INTEGER, huevos_rotos INTEGER DEFAULT 0,
-  costo REAL DEFAULT 0, producto TEXT, notas TEXT, registrado_por TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS ai_chat_history (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  finca_id UUID,
-  usuario_id UUID,
-  role TEXT,
-  content TEXT,
-  image TEXT,
-  fecha TIMESTAMPTZ DEFAULT NOW(),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ==========================================
--- Enable RLS on all tables
--- ==========================================
-
-ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE upgrade_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payment_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
-ALTER TABLE fincas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE finca_miembros ENABLE ROW LEVEL SECURITY;
-ALTER TABLE areas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cultivos_catalogo ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ciclos_productivos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cosechas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ventas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE costos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE colmenas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE inspecciones_colmena ENABLE ROW LEVEL SECURITY;
-ALTER TABLE camas_lombricompost ENABLE ROW LEVEL SECURITY;
-ALTER TABLE registros_lombricompost ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tareas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE inspecciones ENABLE ROW LEVEL SECURITY;
-ALTER TABLE fotos_inspeccion ENABLE ROW LEVEL SECURITY;
-ALTER TABLE aplicaciones_fitosanitarias ENABLE ROW LEVEL SECURITY;
-ALTER TABLE lotes_animales ENABLE ROW LEVEL SECURITY;
-ALTER TABLE registros_animales ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ai_chat_history ENABLE ROW LEVEL SECURITY;
-
--- ==========================================
--- RLS Policies - User Profiles
--- ==========================================
-
-CREATE POLICY "Users see own profile" ON user_profiles
-  FOR SELECT USING (id = auth.uid());
-
-CREATE POLICY "Users update own profile" ON user_profiles
-  FOR UPDATE USING (id = auth.uid());
-
-CREATE POLICY "Users insert own profile" ON user_profiles
-  FOR INSERT WITH CHECK (id = auth.uid());
-
-CREATE POLICY "Admins see all profiles" ON user_profiles
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND is_admin = true)
-  );
-
--- ==========================================
--- RLS Policies - User data isolation
--- ==========================================
-
--- Helper function: user's accessible finca IDs
+-- ============================================
+-- 0. HELPER FUNCTION: Get user's finca IDs
+-- Used by RLS policies to check finca access
+-- ============================================
 CREATE OR REPLACE FUNCTION user_finca_ids()
 RETURNS SETOF UUID AS $$
   SELECT id FROM fincas WHERE propietario_id = auth.uid()
   UNION
   SELECT finca_id FROM finca_miembros WHERE usuario_id = auth.uid()
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
--- Usuarios
-CREATE POLICY "Users manage own user" ON usuarios
-  FOR ALL USING (id = auth.uid());
 
--- Fincas
-CREATE POLICY "Owners see own fincas" ON fincas
-  FOR ALL USING (propietario_id = auth.uid());
+-- ============================================
+-- 1. USER PROFILES (already exists from supabase-fix.sql)
+-- ============================================
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT,
+  nombre TEXT,
+  plan TEXT DEFAULT 'free',
+  plan_expires_at TIMESTAMPTZ,
+  is_admin BOOLEAN DEFAULT FALSE,
+  farm_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Members see fincas" ON fincas
-  FOR SELECT USING (id IN (SELECT finca_id FROM finca_miembros WHERE usuario_id = auth.uid()));
+-- Drop existing policies to avoid conflicts
+DROP POLICY IF EXISTS "Users see own profile" ON user_profiles;
+DROP POLICY IF EXISTS "Users update own profile" ON user_profiles;
+DROP POLICY IF EXISTS "Admins see all profiles" ON user_profiles;
+DROP POLICY IF EXISTS "Service role insert profiles" ON user_profiles;
 
--- Finca miembros
-CREATE POLICY "Access finca_miembros" ON finca_miembros
-  FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "Users see own profile" ON user_profiles FOR SELECT USING (id = auth.uid());
+CREATE POLICY "Users update own profile" ON user_profiles FOR UPDATE USING (id = auth.uid());
+CREATE POLICY "Service role insert profiles" ON user_profiles FOR INSERT WITH CHECK (true);
+-- Admin policy without recursive reference
+CREATE POLICY "Admins see all profiles" ON user_profiles FOR SELECT USING (
+  id = auth.uid() OR EXISTS (
+    SELECT 1 FROM user_profiles up WHERE up.id = auth.uid() AND up.is_admin = true
+  )
+);
 
--- All tables with finca_id
-CREATE POLICY "User access areas" ON areas FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access cultivos" ON cultivos_catalogo FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access ciclos" ON ciclos_productivos FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access cosechas" ON cosechas FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access ventas" ON ventas FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access costos" ON costos FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access colmenas" ON colmenas FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access inspecciones_colmena" ON inspecciones_colmena FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access camas_lombricompost" ON camas_lombricompost FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access registros_lombricompost" ON registros_lombricompost FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access tareas" ON tareas FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access inspecciones" ON inspecciones FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access fotos" ON fotos_inspeccion FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access fitosanitario" ON aplicaciones_fitosanitarias FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access lotes_animales" ON lotes_animales FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
-CREATE POLICY "User access registros_animales" ON registros_animales FOR ALL USING (finca_id IN (SELECT user_finca_ids()));
 
--- AI Chat History
-CREATE POLICY "Users access own chat" ON ai_chat_history
-  FOR ALL USING (usuario_id = auth.uid());
+-- ============================================
+-- 2. FINCAS
+-- ============================================
+CREATE TABLE IF NOT EXISTS fincas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre TEXT NOT NULL,
+  ubicacion TEXT,
+  descripcion TEXT,
+  area_total_m2 NUMERIC DEFAULT 0,
+  sistema_riego TEXT,
+  latitud NUMERIC,
+  longitud NUMERIC,
+  propietario_id UUID REFERENCES auth.users(id),
+  modificado_por TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE fincas ENABLE ROW LEVEL SECURITY;
 
--- Upgrade Requests
-CREATE POLICY "Users create own requests" ON upgrade_requests
-  FOR INSERT WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "fincas_select" ON fincas;
+DROP POLICY IF EXISTS "fincas_insert" ON fincas;
+DROP POLICY IF EXISTS "fincas_update" ON fincas;
+DROP POLICY IF EXISTS "fincas_delete" ON fincas;
 
-CREATE POLICY "Users see own requests" ON upgrade_requests
-  FOR SELECT USING (user_id = auth.uid());
+CREATE POLICY "fincas_select" ON fincas FOR SELECT USING (
+  propietario_id = auth.uid() OR id IN (SELECT finca_id FROM finca_miembros WHERE usuario_id = auth.uid())
+);
+CREATE POLICY "fincas_insert" ON fincas FOR INSERT WITH CHECK (propietario_id = auth.uid());
+CREATE POLICY "fincas_update" ON fincas FOR UPDATE USING (propietario_id = auth.uid());
+CREATE POLICY "fincas_delete" ON fincas FOR DELETE USING (propietario_id = auth.uid());
 
--- Payment History
-CREATE POLICY "Users see own payments" ON payment_history
-  FOR SELECT USING (user_id = auth.uid());
 
--- ==========================================
--- Auto-create profile on signup
--- ==========================================
+-- ============================================
+-- 3. FINCA_MIEMBROS (user-finca membership with roles)
+-- ============================================
+CREATE TABLE IF NOT EXISTS finca_miembros (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  usuario_id UUID REFERENCES auth.users(id),
+  usuario_email TEXT,
+  rol TEXT DEFAULT 'trabajador',
+  invitado_por UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE finca_miembros ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "finca_miembros_select" ON finca_miembros;
+DROP POLICY IF EXISTS "finca_miembros_insert" ON finca_miembros;
+DROP POLICY IF EXISTS "finca_miembros_update" ON finca_miembros;
+DROP POLICY IF EXISTS "finca_miembros_delete" ON finca_miembros;
+
+CREATE POLICY "finca_miembros_select" ON finca_miembros FOR SELECT USING (
+  finca_id IN (SELECT user_finca_ids())
+);
+CREATE POLICY "finca_miembros_insert" ON finca_miembros FOR INSERT WITH CHECK (
+  finca_id IN (SELECT id FROM fincas WHERE propietario_id = auth.uid())
+);
+CREATE POLICY "finca_miembros_update" ON finca_miembros FOR UPDATE USING (
+  finca_id IN (SELECT id FROM fincas WHERE propietario_id = auth.uid())
+);
+CREATE POLICY "finca_miembros_delete" ON finca_miembros FOR DELETE USING (
+  finca_id IN (SELECT id FROM fincas WHERE propietario_id = auth.uid())
+);
+
+
+-- ============================================
+-- 4. AREAS (parcelas georreferenciadas)
+-- ============================================
+CREATE TABLE IF NOT EXISTS areas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  tipo TEXT,
+  area_m2 NUMERIC DEFAULT 0,
+  cultivo_actual_id UUID,
+  geojson JSONB,
+  latitud NUMERIC,
+  longitud NUMERIC,
+  color TEXT,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE areas ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "areas_select" ON areas;
+DROP POLICY IF EXISTS "areas_insert" ON areas;
+DROP POLICY IF EXISTS "areas_update" ON areas;
+DROP POLICY IF EXISTS "areas_delete" ON areas;
+
+CREATE POLICY "areas_select" ON areas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "areas_insert" ON areas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "areas_update" ON areas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "areas_delete" ON areas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 5. CULTIVOS_CATALOGO (crop catalog per finca)
+-- ============================================
+CREATE TABLE IF NOT EXISTS cultivos_catalogo (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  tipo TEXT,
+  unidad_produccion TEXT,
+  ciclo_dias INTEGER DEFAULT 0,
+  color TEXT,
+  icono TEXT,
+  descripcion TEXT,
+  es_predeterminado BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE cultivos_catalogo ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "cultivos_select" ON cultivos_catalogo;
+DROP POLICY IF EXISTS "cultivos_insert" ON cultivos_catalogo;
+DROP POLICY IF EXISTS "cultivos_update" ON cultivos_catalogo;
+DROP POLICY IF EXISTS "cultivos_delete" ON cultivos_catalogo;
+
+CREATE POLICY "cultivos_select" ON cultivos_catalogo FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "cultivos_insert" ON cultivos_catalogo FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "cultivos_update" ON cultivos_catalogo FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "cultivos_delete" ON cultivos_catalogo FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 6. CICLOS_PRODUCTIVOS
+-- ============================================
+CREATE TABLE IF NOT EXISTS ciclos_productivos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  area_id UUID,
+  cultivo_id UUID,
+  nombre TEXT,
+  fecha_inicio DATE,
+  fecha_fin DATE,
+  estado TEXT DEFAULT 'activo',
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE ciclos_productivos ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "ciclos_select" ON ciclos_productivos;
+DROP POLICY IF EXISTS "ciclos_insert" ON ciclos_productivos;
+DROP POLICY IF EXISTS "ciclos_update" ON ciclos_productivos;
+DROP POLICY IF EXISTS "ciclos_delete" ON ciclos_productivos;
+
+CREATE POLICY "ciclos_select" ON ciclos_productivos FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "ciclos_insert" ON ciclos_productivos FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "ciclos_update" ON ciclos_productivos FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "ciclos_delete" ON ciclos_productivos FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 7. COSECHAS
+-- ============================================
+CREATE TABLE IF NOT EXISTS cosechas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  ciclo_id UUID,
+  cultivo_id UUID,
+  area_id UUID,
+  fecha DATE,
+  cantidad NUMERIC DEFAULT 0,
+  unidad TEXT,
+  calidad TEXT,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE cosechas ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "cosechas_select" ON cosechas;
+DROP POLICY IF EXISTS "cosechas_insert" ON cosechas;
+DROP POLICY IF EXISTS "cosechas_update" ON cosechas;
+DROP POLICY IF EXISTS "cosechas_delete" ON cosechas;
+
+CREATE POLICY "cosechas_select" ON cosechas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "cosechas_insert" ON cosechas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "cosechas_update" ON cosechas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "cosechas_delete" ON cosechas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 8. VENTAS
+-- ============================================
+CREATE TABLE IF NOT EXISTS ventas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  cultivo_id UUID,
+  fecha DATE,
+  cantidad NUMERIC DEFAULT 0,
+  unidad TEXT,
+  precio_unitario NUMERIC DEFAULT 0,
+  total NUMERIC DEFAULT 0,
+  comprador TEXT,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE ventas ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "ventas_select" ON ventas;
+DROP POLICY IF EXISTS "ventas_insert" ON ventas;
+DROP POLICY IF EXISTS "ventas_update" ON ventas;
+DROP POLICY IF EXISTS "ventas_delete" ON ventas;
+
+CREATE POLICY "ventas_select" ON ventas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "ventas_insert" ON ventas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "ventas_update" ON ventas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "ventas_delete" ON ventas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 9. COSTOS
+-- ============================================
+CREATE TABLE IF NOT EXISTS costos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  cultivo_id UUID,
+  ciclo_id UUID,
+  categoria TEXT,
+  subcategoria TEXT,
+  fecha DATE,
+  monto NUMERIC DEFAULT 0,
+  descripcion TEXT,
+  proveedor TEXT,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE costos ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "costos_select" ON costos;
+DROP POLICY IF EXISTS "costos_insert" ON costos;
+DROP POLICY IF EXISTS "costos_update" ON costos;
+DROP POLICY IF EXISTS "costos_delete" ON costos;
+
+CREATE POLICY "costos_select" ON costos FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "costos_insert" ON costos FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "costos_update" ON costos FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "costos_delete" ON costos FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 10. COLMENAS
+-- ============================================
+CREATE TABLE IF NOT EXISTS colmenas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  nombre TEXT,
+  tipo TEXT,
+  estado TEXT DEFAULT 'activa',
+  ubicacion TEXT,
+  fecha_instalacion DATE,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE colmenas ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "colmenas_select" ON colmenas;
+DROP POLICY IF EXISTS "colmenas_insert" ON colmenas;
+DROP POLICY IF EXISTS "colmenas_update" ON colmenas;
+DROP POLICY IF EXISTS "colmenas_delete" ON colmenas;
+
+CREATE POLICY "colmenas_select" ON colmenas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "colmenas_insert" ON colmenas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "colmenas_update" ON colmenas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "colmenas_delete" ON colmenas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 11. INSPECCIONES_COLMENA
+-- ============================================
+CREATE TABLE IF NOT EXISTS inspecciones_colmena (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  colmena_id UUID,
+  fecha DATE,
+  estado_general TEXT,
+  reina_vista BOOLEAN DEFAULT FALSE,
+  cria BOOLEAN DEFAULT FALSE,
+  miel_estimada NUMERIC DEFAULT 0,
+  plagas TEXT,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE inspecciones_colmena ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "insp_colmena_select" ON inspecciones_colmena;
+DROP POLICY IF EXISTS "insp_colmena_insert" ON inspecciones_colmena;
+DROP POLICY IF EXISTS "insp_colmena_update" ON inspecciones_colmena;
+DROP POLICY IF EXISTS "insp_colmena_delete" ON inspecciones_colmena;
+
+CREATE POLICY "insp_colmena_select" ON inspecciones_colmena FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "insp_colmena_insert" ON inspecciones_colmena FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "insp_colmena_update" ON inspecciones_colmena FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "insp_colmena_delete" ON inspecciones_colmena FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 12. CAMAS_LOMBRICOMPOST
+-- ============================================
+CREATE TABLE IF NOT EXISTS camas_lombricompost (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  nombre TEXT,
+  largo_m NUMERIC,
+  ancho_m NUMERIC,
+  estado TEXT DEFAULT 'activa',
+  fecha_inicio DATE,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE camas_lombricompost ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "camas_select" ON camas_lombricompost;
+DROP POLICY IF EXISTS "camas_insert" ON camas_lombricompost;
+DROP POLICY IF EXISTS "camas_update" ON camas_lombricompost;
+DROP POLICY IF EXISTS "camas_delete" ON camas_lombricompost;
+
+CREATE POLICY "camas_select" ON camas_lombricompost FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "camas_insert" ON camas_lombricompost FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "camas_update" ON camas_lombricompost FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "camas_delete" ON camas_lombricompost FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 13. REGISTROS_LOMBRICOMPOST
+-- ============================================
+CREATE TABLE IF NOT EXISTS registros_lombricompost (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  cama_id UUID,
+  fecha DATE,
+  tipo TEXT,
+  cantidad_kg NUMERIC DEFAULT 0,
+  material TEXT,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE registros_lombricompost ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "reg_lombri_select" ON registros_lombricompost;
+DROP POLICY IF EXISTS "reg_lombri_insert" ON registros_lombricompost;
+DROP POLICY IF EXISTS "reg_lombri_update" ON registros_lombricompost;
+DROP POLICY IF EXISTS "reg_lombri_delete" ON registros_lombricompost;
+
+CREATE POLICY "reg_lombri_select" ON registros_lombricompost FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "reg_lombri_insert" ON registros_lombricompost FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "reg_lombri_update" ON registros_lombricompost FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "reg_lombri_delete" ON registros_lombricompost FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 14. TAREAS
+-- ============================================
+CREATE TABLE IF NOT EXISTS tareas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  titulo TEXT,
+  descripcion TEXT,
+  fecha_programada DATE,
+  fecha_completada DATE,
+  estado TEXT DEFAULT 'pendiente',
+  prioridad TEXT DEFAULT 'media',
+  asignado_a UUID,
+  area_id UUID,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE tareas ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "tareas_select" ON tareas;
+DROP POLICY IF EXISTS "tareas_insert" ON tareas;
+DROP POLICY IF EXISTS "tareas_update" ON tareas;
+DROP POLICY IF EXISTS "tareas_delete" ON tareas;
+
+CREATE POLICY "tareas_select" ON tareas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "tareas_insert" ON tareas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "tareas_update" ON tareas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "tareas_delete" ON tareas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 15. INSPECCIONES (crop inspections with photos)
+-- ============================================
+CREATE TABLE IF NOT EXISTS inspecciones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  area_id UUID,
+  ciclo_id UUID,
+  fecha DATE,
+  tipo TEXT,
+  estado_general TEXT,
+  plagas TEXT,
+  enfermedades TEXT,
+  recomendaciones TEXT,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE inspecciones ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "inspecciones_select" ON inspecciones;
+DROP POLICY IF EXISTS "inspecciones_insert" ON inspecciones;
+DROP POLICY IF EXISTS "inspecciones_update" ON inspecciones;
+DROP POLICY IF EXISTS "inspecciones_delete" ON inspecciones;
+
+CREATE POLICY "inspecciones_select" ON inspecciones FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "inspecciones_insert" ON inspecciones FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "inspecciones_update" ON inspecciones FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "inspecciones_delete" ON inspecciones FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 16. FOTOS_INSPECCION
+-- ============================================
+CREATE TABLE IF NOT EXISTS fotos_inspeccion (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  inspeccion_id UUID,
+  finca_id UUID,
+  url TEXT,
+  descripcion TEXT,
+  analisis_ia TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE fotos_inspeccion ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "fotos_select" ON fotos_inspeccion;
+DROP POLICY IF EXISTS "fotos_insert" ON fotos_inspeccion;
+DROP POLICY IF EXISTS "fotos_update" ON fotos_inspeccion;
+DROP POLICY IF EXISTS "fotos_delete" ON fotos_inspeccion;
+
+CREATE POLICY "fotos_select" ON fotos_inspeccion FOR SELECT USING (
+  finca_id IN (SELECT user_finca_ids()) OR
+  inspeccion_id IN (SELECT id FROM inspecciones WHERE finca_id IN (SELECT user_finca_ids()))
+);
+CREATE POLICY "fotos_insert" ON fotos_inspeccion FOR INSERT WITH CHECK (true);
+CREATE POLICY "fotos_update" ON fotos_inspeccion FOR UPDATE USING (
+  finca_id IN (SELECT user_finca_ids()) OR
+  inspeccion_id IN (SELECT id FROM inspecciones WHERE finca_id IN (SELECT user_finca_ids()))
+);
+CREATE POLICY "fotos_delete" ON fotos_inspeccion FOR DELETE USING (
+  finca_id IN (SELECT user_finca_ids()) OR
+  inspeccion_id IN (SELECT id FROM inspecciones WHERE finca_id IN (SELECT user_finca_ids()))
+);
+
+
+-- ============================================
+-- 17. APLICACIONES_FITOSANITARIAS
+-- ============================================
+CREATE TABLE IF NOT EXISTS aplicaciones_fitosanitarias (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  area_id UUID,
+  ciclo_id UUID,
+  fecha DATE,
+  producto TEXT,
+  dosis TEXT,
+  metodo TEXT,
+  objetivo TEXT,
+  periodo_carencia_dias INTEGER,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE aplicaciones_fitosanitarias ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "fitosan_select" ON aplicaciones_fitosanitarias;
+DROP POLICY IF EXISTS "fitosan_insert" ON aplicaciones_fitosanitarias;
+DROP POLICY IF EXISTS "fitosan_update" ON aplicaciones_fitosanitarias;
+DROP POLICY IF EXISTS "fitosan_delete" ON aplicaciones_fitosanitarias;
+
+CREATE POLICY "fitosan_select" ON aplicaciones_fitosanitarias FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "fitosan_insert" ON aplicaciones_fitosanitarias FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "fitosan_update" ON aplicaciones_fitosanitarias FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "fitosan_delete" ON aplicaciones_fitosanitarias FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 18. LOTES_ANIMALES
+-- ============================================
+CREATE TABLE IF NOT EXISTS lotes_animales (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  nombre TEXT,
+  tipo_animal TEXT,
+  cantidad INTEGER DEFAULT 0,
+  raza TEXT,
+  area_id UUID,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE lotes_animales ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "lotes_select" ON lotes_animales;
+DROP POLICY IF EXISTS "lotes_insert" ON lotes_animales;
+DROP POLICY IF EXISTS "lotes_update" ON lotes_animales;
+DROP POLICY IF EXISTS "lotes_delete" ON lotes_animales;
+
+CREATE POLICY "lotes_select" ON lotes_animales FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "lotes_insert" ON lotes_animales FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "lotes_update" ON lotes_animales FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "lotes_delete" ON lotes_animales FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 19. REGISTROS_ANIMALES
+-- ============================================
+CREATE TABLE IF NOT EXISTS registros_animales (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID REFERENCES fincas(id) ON DELETE CASCADE,
+  lote_id UUID,
+  tipo TEXT,
+  fecha DATE,
+  descripcion TEXT,
+  cantidad NUMERIC DEFAULT 0,
+  costo NUMERIC DEFAULT 0,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE registros_animales ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "reg_animales_select" ON registros_animales;
+DROP POLICY IF EXISTS "reg_animales_insert" ON registros_animales;
+DROP POLICY IF EXISTS "reg_animales_update" ON registros_animales;
+DROP POLICY IF EXISTS "reg_animales_delete" ON registros_animales;
+
+CREATE POLICY "reg_animales_select" ON registros_animales FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "reg_animales_insert" ON registros_animales FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "reg_animales_update" ON registros_animales FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "reg_animales_delete" ON registros_animales FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+
+-- ============================================
+-- 20. TRIGGER: Auto-create user_profiles on signup
+-- ============================================
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO user_profiles (id, email, nombre, plan, is_admin, farm_count)
+  INSERT INTO public.user_profiles (id, email, nombre, plan, is_admin, farm_count, created_at, updated_at)
   VALUES (
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'nombre', split_part(NEW.email, '@', 1)),
     'free',
     FALSE,
-    0
-  );
+    0,
+    NOW(),
+    NOW()
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    nombre = COALESCE(EXCLUDED.nombre, public.user_profiles.nombre),
+    updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
--- ==========================================
--- Storage bucket for photos
--- ==========================================
 
-INSERT INTO storage.buckets (id, name, public) VALUES ('fotos', 'fotos', true)
-ON CONFLICT (id) DO NOTHING;
+-- ============================================
+-- 21. GRANTS
+-- ============================================
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT USAGE ON SCHEMA public TO anon;
 
-CREATE POLICY "Authenticated users upload photos" ON storage.objects
-  FOR INSERT WITH CHECK (bucket_id = 'fotos' AND auth.role() = 'authenticated');
+-- Authenticated users: full CRUD on all app tables
+GRANT ALL ON public.user_profiles TO authenticated;
+GRANT ALL ON public.fincas TO authenticated;
+GRANT ALL ON public.finca_miembros TO authenticated;
+GRANT ALL ON public.areas TO authenticated;
+GRANT ALL ON public.cultivos_catalogo TO authenticated;
+GRANT ALL ON public.ciclos_productivos TO authenticated;
+GRANT ALL ON public.cosechas TO authenticated;
+GRANT ALL ON public.ventas TO authenticated;
+GRANT ALL ON public.costos TO authenticated;
+GRANT ALL ON public.colmenas TO authenticated;
+GRANT ALL ON public.inspecciones_colmena TO authenticated;
+GRANT ALL ON public.camas_lombricompost TO authenticated;
+GRANT ALL ON public.registros_lombricompost TO authenticated;
+GRANT ALL ON public.tareas TO authenticated;
+GRANT ALL ON public.inspecciones TO authenticated;
+GRANT ALL ON public.fotos_inspeccion TO authenticated;
+GRANT ALL ON public.aplicaciones_fitosanitarias TO authenticated;
+GRANT ALL ON public.lotes_animales TO authenticated;
+GRANT ALL ON public.registros_animales TO authenticated;
 
-CREATE POLICY "Public read photos" ON storage.objects
-  FOR SELECT USING (bucket_id = 'fotos');
+-- Anon: read-only on profiles (for signup trigger)
+GRANT SELECT ON public.user_profiles TO anon;
+
+
+-- ============================================
+-- 22. SCHEMA MIGRATIONS (v2.1)
+-- Run these after initial schema is in place
+-- ============================================
+
+-- Add rendimiento fields to cultivos_catalogo
+ALTER TABLE cultivos_catalogo ADD COLUMN IF NOT EXISTS rendimiento_referencia NUMERIC;
+ALTER TABLE cultivos_catalogo ADD COLUMN IF NOT EXISTS unidad_rendimiento TEXT;
+
+-- Add agenda fields to tareas
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS hora_inicio TIME;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS duracion_minutos INTEGER;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS ciclo_id UUID;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS cultivo_id UUID;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS cultivo_nombre TEXT;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS area_nombre TEXT;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS ciclo_nombre TEXT;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS recurrente BOOLEAN DEFAULT FALSE;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS frecuencia_dias INTEGER;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS completada_en TIMESTAMPTZ;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS completada_por TEXT;
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS creado_por TEXT;
+
+-- Fix asignado_a from UUID to TEXT (JS uses name strings)
+ALTER TABLE tareas ALTER COLUMN asignado_a TYPE TEXT USING asignado_a::TEXT;
+
+
+-- ============================================
+-- 23. VERIFY: Check all tables exist
+-- ============================================
+SELECT table_name FROM information_schema.tables
+WHERE table_schema = 'public'
+AND table_type = 'BASE TABLE'
+ORDER BY table_name;

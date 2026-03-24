@@ -1111,6 +1111,132 @@ details summary:hover {
 .mt-05 { margin-top: 0.25rem; }
 .text-center { text-align: center; }
 
+/* ============================================
+   Emoji Picker Styles
+   ============================================ */
+
+.emoji-picker-btn {
+  width: 100%;
+  height: 44px;
+  font-size: 1.8rem;
+  background: var(--white);
+  border: 1.5px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.emoji-picker-btn:hover { border-color: var(--green-500); }
+
+.emoji-picker-grid {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 50;
+  background: var(--white);
+  border: 1.5px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+  padding: 0.75rem;
+  width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.emoji-category-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--gray-500);
+  margin: 0.5rem 0 0.25rem;
+  letter-spacing: 0.5px;
+}
+.emoji-category-label:first-child { margin-top: 0; }
+
+.emoji-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.emoji-option {
+  width: 36px;
+  height: 36px;
+  font-size: 1.3rem;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.emoji-option:hover {
+  background: var(--green-50);
+  border-color: var(--green-300);
+}
+.emoji-option.selected {
+  background: var(--green-100);
+  border-color: var(--green-700);
+}
+
+/* ============================================
+   Agenda / Task Styles
+   ============================================ */
+
+.card-highlight {
+  border-left: 4px solid var(--green-700);
+  background: linear-gradient(to right, var(--green-50), var(--white));
+}
+
+.card-overdue {
+  border-left: 4px solid var(--red-500);
+  background: linear-gradient(to right, var(--red-100), var(--white));
+}
+
+.agenda-item {
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--gray-100);
+  transition: background var(--transition);
+}
+.agenda-item:hover {
+  background: var(--green-50);
+}
+.agenda-item:last-child {
+  margin-bottom: 0;
+}
+
+.badge-outline {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: transparent;
+  border: 1.5px solid var(--gray-500);
+  color: var(--gray-700);
+}
+
+/* ============================================
+   Area Reference Labels (for map)
+   ============================================ */
+
+.area-ref-label {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid var(--gray-500) !important;
+  border-radius: 4px !important;
+  padding: 2px 6px !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  color: var(--gray-700) !important;
+  box-shadow: none !important;
+}
+
 /* --- Print styles --- */
 @media print {
   .top-bar, .bottom-nav, .sidebar, .fab, .action-sheet { display: none !important; }

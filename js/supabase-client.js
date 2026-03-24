@@ -155,13 +155,43 @@ const SupabaseClient = (() => {
         body: JSON.stringify(record)
       });
       if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`HTTP ${res.status}: ${err}`);
+        const errText = await res.text();
+        // Log detailed error for debugging
+        console.error(`[Supabase] Upsert ${table} failed (${res.status}):`, errText);
+        // If table doesn't exist (404) or permission denied (403/401), throw to let caller handle
+        if (res.status === 404) {
+          throw new Error(`Table '${table}' not found in Supabase (404)`);
+        }
+        if (res.status === 401 || res.status === 403) {
+          throw new Error(`Permission denied for '${table}' (${res.status}): ${errText}`);
+        }
+        // For 409 conflict, try PATCH instead (some RLS configs block POST for existing records)
+        if (res.status === 409) {
+          return await patchRecord(table, record);
+        }
+        throw new Error(`HTTP ${res.status}: ${errText}`);
       }
       const data = await res.json();
       return data[0] || record;
     } catch (err) {
-      console.warn('Supabase upsert error:', err);
+      console.error(`[Supabase] Upsert error (${table}):`, err.message || err);
+      return null;
+    }
+  }
+
+  // Fallback: PATCH existing record
+  async function patchRecord(table, record) {
+    if (!record.id) return null;
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${record.id}`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify(record)
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data[0] || record;
+    } catch {
       return null;
     }
   }

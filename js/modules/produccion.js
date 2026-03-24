@@ -1,11 +1,34 @@
 // ============================================
-// AgroFinca - Producción Module
-// Crop catalog, production cycles, harvests
-// Custom crop types, area rotation
+// AgroFinca - Producción Module (v2)
+// Crop catalog with emoji picker, rendimiento,
+// production cycles, harvests
 // ============================================
 
 const ProduccionModule = (() => {
   let currentTab = 'ciclos';
+
+  // Emoji picker categories for Ecuador agriculture
+  const CROP_ICONS = {
+    'Frutas': ['🍌', '🍊', '🍋', '🍉', '🍇', '🍓', '🍑', '🥭', '🍍', '🥝', '🍈', '🍒', '🍐', '🍎', '🥥', '🍅'],
+    'Hortalizas': ['🫑', '🥒', '🥕', '🧅', '🧄', '🥬', '🥦', '🌶️', '🍆', '🥑', '🌽', '🫘'],
+    'Granos': ['🌾', '🍚', '🌿'],
+    'Tubérculos': ['🥔', '🍠'],
+    'Tropicales': ['☕', '🍫', '🌴', '🌱', '🪴', '🎋'],
+    'Ganadería': ['🐄', '🐖', '🐓', '🐑', '🐐', '🦆', '🐇', '🥚', '🥩', '🧀', '🥛'],
+    'Apicultura': ['🐝', '🍯', '🌸', '🌺', '🌻'],
+    'Otros': ['🪱', '🌳', '💧', '🪵', '📦', '🚜', '🟡', '🟢', '🔵']
+  };
+
+  // Rendimiento units
+  const YIELD_UNITS = [
+    { value: 't/ha', label: 't/ha (toneladas por hectárea)' },
+    { value: 'kg/planta', label: 'kg/planta' },
+    { value: 'kg/planta/año', label: 'kg/planta/año' },
+    { value: 'kg/ha/año', label: 'kg/ha/año' },
+    { value: 'racimos/planta/año', label: 'racimos/planta/año' },
+    { value: 'litros/colmena/año', label: 'litros/colmena/año' },
+    { value: 'kg/m²/ciclo', label: 'kg/m²/ciclo' }
+  ];
 
   async function render(container, fincaId) {
     if (!fincaId) {
@@ -86,7 +109,6 @@ const ProduccionModule = (() => {
       ${sorted.length === 0 ? '<div class="empty-state"><h3>Sin ciclos productivos</h3><p>Inicia un nuevo ciclo para registrar producción.</p></div>' :
       sorted.map(c => {
         const progress = DateUtils.cycleProgress(c.fecha_inicio, c.ciclo_dias);
-        const cosechasCiclo = ciclos.filter(co => co.ciclo_id === c.id);
         return `
           <div class="card">
             <div class="flex-between">
@@ -215,6 +237,7 @@ const ProduccionModule = (() => {
               <button class="btn btn-sm btn-danger btn-del-cultivo" data-id="${c.id}">🗑</button>
             </div>
           </div>
+          ${c.rendimiento_referencia ? `<div class="text-sm mt-1" style="color:var(--green-700);">📊 Rend. ref: ${c.rendimiento_referencia} ${c.unidad_rendimiento || 't/ha'}</div>` : ''}
           ${c.descripcion ? `<p class="text-sm text-muted mt-1">${c.descripcion}</p>` : ''}
         </div>
       `).join('')}
@@ -327,7 +350,6 @@ const ProduccionModule = (() => {
         await AgroDB.update('ciclos_productivos', ciclo.id, data);
       } else {
         await AgroDB.add('ciclos_productivos', data);
-        // Update area's current crop
         if (data.area_id) {
           await AgroDB.update('areas', data.area_id, {
             cultivo_actual_id: data.cultivo_id,
@@ -406,7 +428,6 @@ const ProduccionModule = (() => {
         }
       }
     });
-    // Trigger if pre-selected
     if (cicloId) document.getElementById('cos-ciclo').dispatchEvent(new Event('change'));
 
     document.getElementById('btn-save-cosecha').addEventListener('click', async () => {
@@ -440,17 +461,32 @@ const ProduccionModule = (() => {
     });
   }
 
+  // ---- Cultivo Form with Emoji Picker & Rendimiento ----
+
   async function showCultivoForm(fincaId, cultivo = null) {
     const isEdit = !!cultivo;
+    const selectedIcon = cultivo?.icono || '🌱';
+
     const body = `
       <div class="form-row">
-        <div class="form-group">
+        <div class="form-group" style="flex:3;">
           <label>Nombre *</label>
           <input type="text" id="cult-nombre" value="${cultivo?.nombre || ''}" placeholder="Tomate, Cacao...">
         </div>
-        <div class="form-group">
+        <div class="form-group" style="flex:1; min-width:80px;">
           <label>Icono</label>
-          <input type="text" id="cult-icono" value="${cultivo?.icono || '🌱'}" placeholder="🌱" maxlength="4" style="width:60px;">
+          <div class="emoji-picker-wrapper" style="position:relative;">
+            <button type="button" class="emoji-picker-btn" id="emoji-picker-btn">${selectedIcon}</button>
+            <input type="hidden" id="cult-icono" value="${selectedIcon}">
+            <div class="emoji-picker-grid" id="emoji-picker-grid" style="display:none;">
+              ${Object.entries(CROP_ICONS).map(([cat, emojis]) => `
+                <div class="emoji-category-label">${cat}</div>
+                <div class="emoji-options-row">
+                  ${emojis.map(e => `<button type="button" class="emoji-option ${e === selectedIcon ? 'selected' : ''}" data-emoji="${e}">${e}</button>`).join('')}
+                </div>
+              `).join('')}
+            </div>
+          </div>
         </div>
       </div>
       <div class="form-row">
@@ -464,6 +500,8 @@ const ProduccionModule = (() => {
             <option value="hortaliza" ${cultivo?.tipo === 'hortaliza' ? 'selected' : ''}>Hortaliza</option>
             <option value="cereal" ${cultivo?.tipo === 'cereal' ? 'selected' : ''}>Cereal</option>
             <option value="leguminosa" ${cultivo?.tipo === 'leguminosa' ? 'selected' : ''}>Leguminosa</option>
+            <option value="apicola" ${cultivo?.tipo === 'apicola' ? 'selected' : ''}>Apícola</option>
+            <option value="compostaje" ${cultivo?.tipo === 'compostaje' ? 'selected' : ''}>Compostaje</option>
             <option value="otro" ${cultivo?.tipo === 'otro' ? 'selected' : ''}>Otro</option>
           </select>
         </div>
@@ -486,6 +524,20 @@ const ProduccionModule = (() => {
           <input type="color" id="cult-color" value="${cultivo?.color || '#4CAF50'}">
         </div>
       </div>
+
+      <div class="form-row" style="background:var(--green-50);padding:0.75rem;border-radius:var(--radius-sm);margin-bottom:1rem;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>📊 Rendimiento de referencia</label>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <input type="number" id="cult-rendimiento" step="0.01" value="${cultivo?.rendimiento_referencia || ''}" placeholder="0.00" style="flex:1;">
+            <select id="cult-unidad-rend" style="flex:1.5;">
+              ${YIELD_UNITS.map(u => `<option value="${u.value}" ${cultivo?.unidad_rendimiento === u.value ? 'selected' : ''}>${u.label}</option>`).join('')}
+            </select>
+          </div>
+          <span class="form-hint">Promedio científico (ESPAC/INEC). Sirve de referencia para comparar tu producción.</span>
+        </div>
+      </div>
+
       <div class="form-group">
         <label>Descripción</label>
         <textarea id="cult-desc" placeholder="Características del cultivo">${cultivo?.descripcion || ''}</textarea>
@@ -495,6 +547,36 @@ const ProduccionModule = (() => {
       `<button class="btn btn-secondary" onclick="App.closeModal()">Cancelar</button>
        <button class="btn btn-primary" id="btn-save-cultivo">Guardar</button>`);
 
+    // Emoji picker logic
+    const pickerBtn = document.getElementById('emoji-picker-btn');
+    const pickerGrid = document.getElementById('emoji-picker-grid');
+    const iconInput = document.getElementById('cult-icono');
+
+    pickerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = pickerGrid.style.display !== 'none';
+      pickerGrid.style.display = isOpen ? 'none' : 'block';
+    });
+
+    pickerGrid.querySelectorAll('.emoji-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const emoji = opt.dataset.emoji;
+        iconInput.value = emoji;
+        pickerBtn.textContent = emoji;
+        pickerGrid.querySelectorAll('.emoji-option').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        pickerGrid.style.display = 'none';
+      });
+    });
+
+    // Close picker when clicking outside
+    document.addEventListener('click', function closePicker(e) {
+      if (!pickerGrid.contains(e.target) && e.target !== pickerBtn) {
+        pickerGrid.style.display = 'none';
+      }
+    });
+
     document.getElementById('btn-save-cultivo').addEventListener('click', async () => {
       const nombre = document.getElementById('cult-nombre').value.trim();
       if (!nombre) { App.showToast('El nombre es obligatorio', 'warning'); return; }
@@ -502,11 +584,13 @@ const ProduccionModule = (() => {
       const data = {
         finca_id: fincaId,
         nombre,
-        icono: document.getElementById('cult-icono').value.trim() || '🌱',
+        icono: iconInput.value || '🌱',
         tipo: document.getElementById('cult-tipo').value,
         unidad_produccion: document.getElementById('cult-unidad').value,
         ciclo_dias: parseInt(document.getElementById('cult-dias').value) || 0,
         color: document.getElementById('cult-color').value,
+        rendimiento_referencia: parseFloat(document.getElementById('cult-rendimiento').value) || null,
+        unidad_rendimiento: document.getElementById('cult-unidad-rend').value || 't/ha',
         descripcion: document.getElementById('cult-desc').value.trim(),
         es_predeterminado: false
       };

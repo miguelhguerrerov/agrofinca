@@ -1,7 +1,11 @@
 // ============================================
-// AgroFinca - Fincas Module (v2)
+// AgroFinca - Fincas Module (v3)
 // Satellite map view, scale bar, full CRUD areas
-// Member management with audit trail
+// Member management with email validation
+// Ref 1: auto-recalculate area on polygon edit
+// Ref 2: fix high-zoom satellite tiles
+// Ref 3: show existing areas as reference
+// Ref 6: validate member email against Supabase
 // ============================================
 
 const FincasModule = (() => {
@@ -15,20 +19,25 @@ const FincasModule = (() => {
 
     const m = L.map(elementId).setView([lat, lng], zoom);
 
+    // Esri satellite with maxNativeZoom to prevent "Map data not yet available" at high zoom
     const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      attribution: '© Esri WorldImagery', maxZoom: 22
+      attribution: '© Esri WorldImagery', maxZoom: 22, maxNativeZoom: 19
+    });
+    // Google Satellite as alternative (better coverage at high zoom)
+    const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+      attribution: '© Google', maxZoom: 22, maxNativeZoom: 20
     });
     const streets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap', maxZoom: 19
     });
     const labels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 22, opacity: 0.7
+      maxZoom: 22, maxNativeZoom: 19, opacity: 0.7
     });
 
     satellite.addTo(m);
 
     L.control.layers(
-      { '🛰️ Satélite': satellite, '🗺️ Calles': streets },
+      { '🛰️ Esri Satélite': satellite, '🛰️ Google Satélite': googleSat, '🗺️ Calles': streets },
       { '🏷️ Etiquetas viales': labels },
       { position: 'topright', collapsed: true }
     ).addTo(m);
@@ -36,6 +45,14 @@ const FincasModule = (() => {
     L.control.scale({ imperial: false, metric: true, maxWidth: 200, position: 'bottomleft' }).addTo(m);
 
     return m;
+  }
+
+  // --- Helper: calculate area from a polygon layer ---
+  function calculateAreaFromLayer(layer) {
+    if (!layer.getLatLngs) return 0;
+    const coords = layer.getLatLngs()[0];
+    if (!coords || coords.length < 3) return 0;
+    return L.GeometryUtil ? L.GeometryUtil.geodesicArea(coords) : estimateArea(coords);
   }
 
   async function render(container, fincaId) {
@@ -296,7 +313,7 @@ const FincasModule = (() => {
     const miembrosInfo = [];
     for (const m of miembros) {
       const u = await AgroDB.getById('usuarios', m.usuario_id);
-      miembrosInfo.push({ ...m, nombre: u?.nombre || m.usuario_email || 'Desconocido', email: u?.email || m.usuario_email });
+      miembrosInfo.push({ ...m, nombre: u?.nombre || m.nombre || m.usuario_email || 'Desconocido', email: u?.email || m.usuario_email });
     }
 
     const content = document.getElementById('main-content');
@@ -353,6 +370,7 @@ const FincasModule = (() => {
             <div class="member-chip" data-member-id="${m.id}">
               <div class="member-avatar">${Format.initials(m.nombre)}</div>
               <span>${m.nombre} (${m.rol})</span>
+              ${m.estado_invitacion === 'pendiente' ? '<span class="badge badge-amber" style="margin-left:4px;">Pendiente</span>' : ''}
               ${isOwner ? `<span class="member-remove" data-id="${m.id}">&times;</span>` : ''}
             </div>
           `).join('')}
@@ -440,7 +458,7 @@ const FincasModule = (() => {
         </div>
         <div class="form-group">
           <label>Área (m²)</label>
-          <input type="number" id="area-m2" value="${area?.area_m2 || ''}" placeholder="500">
+          <input type="number" id="area-m2" value="${area?.area_m2 || ''}" placeholder="Auto-calculada al dibujar">
         </div>
       </div>
       <div class="form-group">
@@ -449,7 +467,7 @@ const FincasModule = (() => {
       </div>
       <div class="form-group">
         <label>📡 Dibujar área en vista satelital</label>
-        <p class="form-hint">Usa los botones de dibujo para trazar el polígono del área sobre la imagen satelital. La escala muestra decenas de metros.</p>
+        <p class="form-hint">Dibuja el polígono del área. Las áreas existentes se muestran como referencia (línea punteada).</p>
         <div id="area-map-draw" class="map-container" style="height:300px;"></div>
       </div>
       <div class="form-group">
@@ -467,50 +485,99 @@ const FincasModule = (() => {
     let drawLayer = new L.FeatureGroup();
     let areaGeoJSON = area?.geojson ? JSON.parse(area.geojson) : null;
 
-    setTimeout(() => {
+    setTimeout(async () => {
       const mapContainer = document.getElementById('area-map-draw');
       if (!mapContainer || typeof L === 'undefined') return;
 
-      AgroDB.getById('fincas', fincaId).then(finca => {
-        const lat = finca?.latitud || -1.8312;
-        const lng = finca?.longitud || -79.9345;
+      const finca = await AgroDB.getById('fincas', fincaId);
+      const lat = finca?.latitud || -1.8312;
+      const lng = finca?.longitud || -79.9345;
 
-        drawMap = createMapWithLayers('area-map-draw', lat, lng, 19);
-        if (!drawMap) return;
-        drawMap.addLayer(drawLayer);
+      drawMap = createMapWithLayers('area-map-draw', lat, lng, 19);
+      if (!drawMap) return;
+      drawMap.addLayer(drawLayer);
 
-        if (areaGeoJSON) {
-          const layer = L.geoJSON(areaGeoJSON, {
-            style: { color: area.color || '#4CAF50', fillOpacity: 0.35, weight: 2 }
-          });
-          layer.eachLayer(l => drawLayer.addLayer(l));
-          drawMap.fitBounds(drawLayer.getBounds().pad(0.1));
+      // === REQ 3: Show existing areas as read-only reference ===
+      const allAreas = await AgroDB.getByIndex('areas', 'finca_id', fincaId);
+      const otherAreas = allAreas.filter(a => !isEdit || a.id !== area.id);
+      const refGroup = new L.FeatureGroup();
+
+      otherAreas.forEach(a => {
+        if (a.geojson) {
+          try {
+            const geoLayer = L.geoJSON(JSON.parse(a.geojson), {
+              style: {
+                color: a.color || '#888',
+                fillColor: a.color || '#888',
+                fillOpacity: 0.15,
+                weight: 1.5,
+                dashArray: '6,4'
+              },
+              interactive: false
+            });
+            geoLayer.eachLayer(l => {
+              l.bindTooltip(a.nombre, {
+                permanent: true,
+                direction: 'center',
+                className: 'area-ref-label'
+              });
+            });
+            geoLayer.addTo(refGroup);
+          } catch (e) { /* ignore */ }
         }
+      });
+      refGroup.addTo(drawMap);
 
-        const drawControl = new L.Control.Draw({
-          edit: { featureGroup: drawLayer },
-          draw: {
-            polygon: { allowIntersection: false, showArea: true, metric: true },
-            rectangle: true,
-            circle: false, circlemarker: false, marker: true, polyline: false
-          }
+      // Load current area being edited
+      if (areaGeoJSON) {
+        const layer = L.geoJSON(areaGeoJSON, {
+          style: { color: area.color || '#4CAF50', fillOpacity: 0.35, weight: 2 }
         });
-        drawMap.addControl(drawControl);
+        layer.eachLayer(l => drawLayer.addLayer(l));
+        drawMap.fitBounds(drawLayer.getBounds().pad(0.1));
+      } else if (refGroup.getLayers().length > 0) {
+        // Fit to reference areas if no current area
+        drawMap.fitBounds(refGroup.getBounds().pad(0.2));
+      }
 
-        drawMap.on(L.Draw.Event.CREATED, (e) => {
-          drawLayer.clearLayers();
-          drawLayer.addLayer(e.layer);
-          areaGeoJSON = drawLayer.toGeoJSON();
-          if (e.layerType === 'polygon' || e.layerType === 'rectangle') {
-            const coords = e.layer.getLatLngs()[0];
-            const m2 = L.GeometryUtil ? L.GeometryUtil.geodesicArea(coords) : estimateArea(coords);
+      const drawControl = new L.Control.Draw({
+        edit: { featureGroup: drawLayer },
+        draw: {
+          polygon: { allowIntersection: false, showArea: true, metric: true },
+          rectangle: true,
+          circle: false, circlemarker: false, marker: true, polyline: false
+        }
+      });
+      drawMap.addControl(drawControl);
+
+      // === REQ 1: Auto-recalculate area on create AND edit ===
+      drawMap.on(L.Draw.Event.CREATED, (e) => {
+        drawLayer.clearLayers();
+        drawLayer.addLayer(e.layer);
+        areaGeoJSON = drawLayer.toGeoJSON();
+        if (e.layerType === 'polygon' || e.layerType === 'rectangle') {
+          const m2 = calculateAreaFromLayer(e.layer);
+          document.getElementById('area-m2').value = Math.round(m2);
+        }
+      });
+
+      drawMap.on(L.Draw.Event.EDITED, (e) => {
+        areaGeoJSON = drawLayer.toGeoJSON();
+        // Recalculate area for each edited layer
+        e.layers.eachLayer(layer => {
+          const m2 = calculateAreaFromLayer(layer);
+          if (m2 > 0) {
             document.getElementById('area-m2').value = Math.round(m2);
           }
         });
-        drawMap.on(L.Draw.Event.EDITED, () => { areaGeoJSON = drawLayer.toGeoJSON(); });
-        drawMap.on(L.Draw.Event.DELETED, () => { areaGeoJSON = null; document.getElementById('area-m2').value = ''; });
-        setTimeout(() => drawMap.invalidateSize(), 200);
       });
+
+      drawMap.on(L.Draw.Event.DELETED, () => {
+        areaGeoJSON = null;
+        document.getElementById('area-m2').value = '';
+      });
+
+      setTimeout(() => drawMap.invalidateSize(), 200);
     }, 300);
 
     document.getElementById('btn-delete-area')?.addEventListener('click', async () => {
@@ -562,11 +629,13 @@ const FincasModule = (() => {
     return Math.abs(area / 2) * 111320 * 111320;
   }
 
+  // === REQ 6: Member invitation with Supabase email validation ===
   async function showAddMember(fincaId) {
     const body = `
       <div class="form-group">
         <label>Correo del usuario a invitar *</label>
-        <input type="email" id="member-email" placeholder="capataz@correo.com">
+        <input type="email" id="member-email" placeholder="usuario@correo.com">
+        <div id="member-email-status" class="form-hint"></div>
       </div>
       <div class="form-group">
         <label>Nombre (referencia)</label>
@@ -586,20 +655,62 @@ const FincasModule = (() => {
       `<button class="btn btn-secondary" onclick="App.closeModal()">Cancelar</button>
        <button class="btn btn-primary" id="btn-save-member">Invitar</button>`);
 
+    // Email validation against Supabase
+    let foundUserId = null;
+    let foundNombre = '';
+
+    document.getElementById('member-email').addEventListener('blur', async () => {
+      const email = document.getElementById('member-email').value.trim().toLowerCase();
+      const statusEl = document.getElementById('member-email-status');
+      if (!email || !email.includes('@')) { statusEl.textContent = ''; return; }
+
+      statusEl.textContent = 'Verificando...';
+      statusEl.className = 'form-hint';
+      foundUserId = null;
+      foundNombre = '';
+
+      try {
+        if (SyncEngine.isOnline() && SupabaseClient.hasSession()) {
+          const profiles = await SupabaseClient.select('user_profiles', { email });
+          if (profiles.length > 0) {
+            foundUserId = profiles[0].id;
+            foundNombre = profiles[0].nombre || '';
+            statusEl.innerHTML = `<span style="color:var(--green-700);">✅ Usuario encontrado: <b>${foundNombre || email}</b></span>`;
+            // Auto-fill name if empty
+            const nameInput = document.getElementById('member-nombre');
+            if (!nameInput.value && foundNombre) nameInput.value = foundNombre;
+          } else {
+            statusEl.innerHTML = '<span style="color:var(--amber-700);">⚠️ Correo no registrado en AgroFinca. Se creará invitación pendiente.</span>';
+          }
+        } else {
+          statusEl.innerHTML = '<span style="color:var(--gray-500);">📡 Sin conexión — se verificará al sincronizar</span>';
+        }
+      } catch (e) {
+        statusEl.innerHTML = '<span style="color:var(--gray-500);">📡 No se pudo verificar — se guardará como pendiente</span>';
+      }
+    });
+
     document.getElementById('btn-save-member').addEventListener('click', async () => {
-      const email = document.getElementById('member-email').value.trim();
+      const email = document.getElementById('member-email').value.trim().toLowerCase();
       if (!email) { App.showToast('El correo es obligatorio', 'warning'); return; }
-      const users = await AgroDB.getAll('usuarios');
-      const user = users.find(u => u.email === email);
+
+      // Check for duplicates
+      const existingMembers = await AgroDB.getByIndex('finca_miembros', 'finca_id', fincaId);
+      if (existingMembers.find(m => m.usuario_email === email)) {
+        App.showToast('Este usuario ya es miembro de la finca', 'warning');
+        return;
+      }
+
       await AgroDB.add('finca_miembros', {
         finca_id: fincaId,
-        usuario_id: user?.id || null,
+        usuario_id: foundUserId || null,
         usuario_email: email,
-        nombre: document.getElementById('member-nombre').value.trim(),
-        rol: document.getElementById('member-rol').value
+        nombre: document.getElementById('member-nombre').value.trim() || foundNombre,
+        rol: document.getElementById('member-rol').value,
+        estado_invitacion: foundUserId ? 'activa' : 'pendiente'
       });
       App.closeModal();
-      App.showToast('Miembro invitado', 'success');
+      App.showToast(foundUserId ? 'Miembro agregado' : 'Invitación pendiente creada', 'success');
       showFincaDetail(fincaId);
     });
   }

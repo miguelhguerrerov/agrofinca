@@ -35,7 +35,11 @@ const SupabaseClient = (() => {
       })
     });
     const data = await res.json();
-    if (data.error) throw new Error(data.error.message || data.msg);
+    // Supabase returns errors in different formats: {error, error_description}, {error_code, msg}, or HTTP status
+    if (!res.ok || data.error || data.error_code || data.msg === 'Invalid login credentials') {
+      const msg = data.error_description || data.msg || data.error?.message || data.error || `Error HTTP ${res.status}`;
+      throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
     if (data.access_token) {
       setTokens(data.access_token, data.refresh_token);
     }
@@ -49,7 +53,14 @@ const SupabaseClient = (() => {
       body: JSON.stringify({ email, password })
     });
     const data = await res.json();
-    if (data.error) throw new Error(data.error_description || data.error.message || data.msg);
+    // Supabase returns errors in different formats: {error, error_description}, {error_code, msg}, or HTTP status
+    if (!res.ok || data.error || data.error_code) {
+      const msg = data.error_description || data.msg || data.error?.message || data.error || `Error HTTP ${res.status}`;
+      throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+    if (!data.access_token) {
+      throw new Error('No se recibió token de acceso del servidor');
+    }
     setTokens(data.access_token, data.refresh_token);
     return data;
   }

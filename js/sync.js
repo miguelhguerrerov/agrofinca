@@ -326,6 +326,12 @@ const SyncEngine = (() => {
             }
 
             const clean = cleanRecord(table, record);
+
+            // Debug logging for key tables
+            if (table === 'fincas' || table === 'areas') {
+              console.log(`[Sync] 📤 Pushing ${table}:`, JSON.stringify(clean).substring(0, 300));
+            }
+
             const result = await SupabaseClient.upsert(table, clean);
 
             if (result) {
@@ -335,7 +341,7 @@ const SyncEngine = (() => {
               processed++;
 
               if (table === 'fincas') {
-                // Track success - no cascade block needed
+                console.log(`[Sync] ✅ Finca synced OK: "${clean.nombre}" (${clean.id}) propietario=${clean.propietario_id}`);
               }
             } else {
               // upsert returned null = server rejected
@@ -454,11 +460,48 @@ const SyncEngine = (() => {
     });
   }
 
-  // Force full sync (resets timestamp + clears retry counters)
+  // Re-queue unsynced records that were removed from sync_queue (after max retries)
+  // Scans all sync tables for records with synced !== true and no matching queue entry
+  async function requeueUnsynced() {
+    let requeued = 0;
+    try {
+      const queue = await AgroDB.getSyncQueue();
+      // Build a set of record_ids already in queue (per table)
+      const inQueue = {};
+      for (const item of queue) {
+        if (!inQueue[item.store_name]) inQueue[item.store_name] = new Set();
+        inQueue[item.store_name].add(item.record_id);
+      }
+
+      for (const table of SYNC_TABLES) {
+        try {
+          const unsynced = await AgroDB.getUnsynced(table);
+          for (const record of unsynced) {
+            if (inQueue[table] && inQueue[table].has(record.id)) continue; // already queued
+            await AgroDB.addToSyncQueue(table, 'upsert', record.id);
+            requeued++;
+          }
+        } catch (e) {
+          // Table may not exist in IndexedDB yet, skip
+        }
+      }
+
+      if (requeued > 0) {
+        console.log(`[Sync] ♻️ Re-queued ${requeued} unsynced records that were missing from queue`);
+      }
+    } catch (err) {
+      console.warn('[Sync] requeueUnsynced error:', err.message || err);
+    }
+    return requeued;
+  }
+
+  // Force full sync (resets timestamp + clears retry counters + re-queues missing items)
   async function forceSync() {
     lastSyncTimestamp = null;
     localStorage.removeItem('agrofinca_last_sync');
     clearAllRetries();
+    // Re-queue any records that were removed from sync_queue after max retries
+    await requeueUnsynced();
     return syncAll();
   }
 

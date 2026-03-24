@@ -5,7 +5,7 @@
 
 const AgroDB = (() => {
   const DB_NAME = 'agrofinca_db';
-  const DB_VERSION = 4;
+  const DB_VERSION = 5;
   let db = null;
 
   // All object stores (tables)
@@ -30,6 +30,7 @@ const AgroDB = (() => {
     'lotes_animales',
     'registros_animales',
     'sync_queue',
+    'ai_conversations',
     'ai_chat_history',
     'user_profiles_local',
     'payment_history'
@@ -220,10 +221,19 @@ const AgroDB = (() => {
           store.createIndex('timestamp', 'timestamp', { unique: false });
         }
 
-        // --- ai_chat_history (historial de chat IA) ---
+        // --- ai_conversations (conversaciones de chat IA) ---
+        if (!database.objectStoreNames.contains('ai_conversations')) {
+          const store = database.createObjectStore('ai_conversations', { keyPath: 'id' });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('updated_at', 'updated_at', { unique: false });
+          store.createIndex('usuario_id', 'usuario_id', { unique: false });
+        }
+
+        // --- ai_chat_history (mensajes de chat IA) ---
         if (!database.objectStoreNames.contains('ai_chat_history')) {
           const store = database.createObjectStore('ai_chat_history', { keyPath: 'id' });
           store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('conversation_id', 'conversation_id', { unique: false });
           store.createIndex('fecha', 'fecha', { unique: false });
           store.createIndex('usuario_id', 'usuario_id', { unique: false });
         }

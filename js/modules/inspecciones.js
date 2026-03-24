@@ -203,11 +203,12 @@ const InspeccionesModule = (() => {
       </div>
 
       <div class="section-title">📷 Fotografías</div>
-      <div class="photo-input-area" id="photo-drop-area">
-        <div class="photo-icon">📷</div>
-        <p>Toca para tomar foto o seleccionar imagen</p>
-        <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none;">
+      <div class="photo-buttons-row">
+        <button type="button" class="btn btn-outline btn-sm" id="btn-take-photo">📷 Tomar foto</button>
+        <button type="button" class="btn btn-outline btn-sm" id="btn-upload-photo">🖼️ Galería</button>
       </div>
+      <input type="file" id="photo-camera" accept="image/*" capture="environment" multiple style="display:none;">
+      <input type="file" id="photo-gallery" accept="image/*" multiple style="display:none;">
       <div class="photo-preview-grid" id="photo-previews">
         ${photos.map(p => `
           <div class="photo-preview-item" data-photo-id="${p.id}">
@@ -224,11 +225,15 @@ const InspeccionesModule = (() => {
 
     // Photo handling
     let newPhotos = [];
-    const dropArea = document.getElementById('photo-drop-area');
-    const fileInput = document.getElementById('photo-input');
+    const cameraInput = document.getElementById('photo-camera');
+    const galleryInput = document.getElementById('photo-gallery');
 
-    dropArea.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (e) => {
+    document.getElementById('btn-take-photo').addEventListener('click', () => cameraInput.click());
+    document.getElementById('btn-upload-photo').addEventListener('click', () => galleryInput.click());
+    cameraInput.addEventListener('change', (e) => {
+      handlePhotos(e.target.files, newPhotos);
+    });
+    galleryInput.addEventListener('change', (e) => {
       handlePhotos(e.target.files, newPhotos);
     });
 

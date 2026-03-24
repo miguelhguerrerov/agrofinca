@@ -42,25 +42,7 @@ DO $$ BEGIN
 END $$;
 
 -- ============================================================================
--- STEP 2: Helper function - user_finca_ids()
--- ============================================================================
-DO $$ BEGIN
-  RAISE NOTICE '=== STEP 2: Creating helper function user_finca_ids() ===';
-END $$;
-
-CREATE OR REPLACE FUNCTION user_finca_ids()
-RETURNS SETOF UUID
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-AS $$
-  SELECT id FROM fincas WHERE propietario_id = auth.uid()
-  UNION
-  SELECT finca_id FROM finca_miembros WHERE usuario_id = auth.uid();
-$$;
-
--- ============================================================================
--- STEP 3: user_profiles (preserved - CREATE IF NOT EXISTS)
+-- STEP 2: user_profiles (preserved - CREATE IF NOT EXISTS)
 -- ============================================================================
 DO $$ BEGIN
   RAISE NOTICE '=== STEP 3: Ensuring user_profiles exists ===';
@@ -135,6 +117,24 @@ CREATE TABLE finca_miembros (
 
 DO $$ BEGIN
   RAISE NOTICE 'Created: finca_miembros';
+  RAISE NOTICE 'Creating helper function user_finca_ids()...';
+END $$;
+
+-- Helper function: user_finca_ids() - must be created AFTER fincas + finca_miembros
+CREATE OR REPLACE FUNCTION user_finca_ids()
+RETURNS SETOF UUID
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT id FROM fincas WHERE propietario_id = auth.uid()
+  UNION
+  SELECT finca_id FROM finca_miembros WHERE usuario_id = auth.uid();
+$$;
+
+DO $$ BEGIN
+  RAISE NOTICE 'Created: user_finca_ids() function';
 END $$;
 
 -- ---------- areas ----------

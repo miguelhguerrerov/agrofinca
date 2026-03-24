@@ -1,16 +1,28 @@
 // ============================================
-// AgroFinca - Fincas Module (v3)
-// Satellite map view, scale bar, full CRUD areas
+// AgroFinca - Fincas Module (v4)
+// UX Redesign: Tabbed detail view (Áreas/Miembros/Info)
+// Area categorization by type, map labels, Google Satellite default
 // Member management with email validation
-// Ref 1: auto-recalculate area on polygon edit
-// Ref 2: fix high-zoom satellite tiles
-// Ref 3: show existing areas as reference
-// Ref 6: validate member email against Supabase
 // ============================================
 
 const FincasModule = (() => {
   let map = null;
   let drawnItems = null;
+  let currentFincaTab = 'areas';
+
+  // --- Area type taxonomy ---
+  const AREA_TYPES = [
+    { value: 'productivo',      label: 'Productivo',      icon: '🌱', color: '#4CAF50', badge: 'badge-green' },
+    { value: 'proteccion',      label: 'Protección',      icon: '🌳', color: '#2196F3', badge: 'badge-blue' },
+    { value: 'procesamiento',   label: 'Procesamiento',   icon: '🏭', color: '#FFA000', badge: 'badge-amber' },
+    { value: 'almacenamiento',  label: 'Almacenamiento',  icon: '📦', color: '#795548', badge: 'badge-brown' },
+    { value: 'infraestructura', label: 'Infraestructura', icon: '🏠', color: '#9E9E9E', badge: 'badge-gray' },
+    { value: 'otros',           label: 'Otros',           icon: '📍', color: '#616161', badge: 'badge-gray' }
+  ];
+
+  function getAreaType(v) {
+    return AREA_TYPES.find(t => t.value === v) || AREA_TYPES[AREA_TYPES.length - 1];
+  }
 
   // --- Helper: create map with satellite + street layers + scale ---
   function createMapWithLayers(elementId, lat, lng, zoom = 18) {
@@ -19,13 +31,11 @@ const FincasModule = (() => {
 
     const m = L.map(elementId).setView([lat, lng], zoom);
 
-    // Esri satellite with maxNativeZoom to prevent "Map data not yet available" at high zoom
-    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      attribution: '© Esri WorldImagery', maxZoom: 22, maxNativeZoom: 19
-    });
-    // Google Satellite as alternative (better coverage at high zoom)
     const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
       attribution: '© Google', maxZoom: 22, maxNativeZoom: 20
+    });
+    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '© Esri WorldImagery', maxZoom: 22, maxNativeZoom: 19
     });
     const streets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap', maxZoom: 19
@@ -34,10 +44,11 @@ const FincasModule = (() => {
       maxZoom: 22, maxNativeZoom: 19, opacity: 0.7
     });
 
-    satellite.addTo(m);
+    // Google Satellite as default
+    googleSat.addTo(m);
 
     L.control.layers(
-      { '🛰️ Esri Satélite': satellite, '🛰️ Google Satélite': googleSat, '🗺️ Calles': streets },
+      { '🛰️ Google Satélite': googleSat, '🛰️ Esri Satélite': satellite, '🗺️ Calles': streets },
       { '🏷️ Etiquetas viales': labels },
       { position: 'topright', collapsed: true }
     ).addTo(m);
@@ -55,6 +66,9 @@ const FincasModule = (() => {
     return L.GeometryUtil ? L.GeometryUtil.geodesicArea(coords) : estimateArea(coords);
   }
 
+  // =============================================
+  // RENDER: Finca List
+  // =============================================
   async function render(container, fincaId) {
     const userId = AuthModule.getUserId();
     const fincas = await AgroDB.getByIndex('fincas', 'propietario_id', userId);
@@ -132,6 +146,9 @@ const FincasModule = (() => {
     `;
   }
 
+  // =============================================
+  // FINCA FORM (Create / Edit)
+  // =============================================
   async function showFincaForm(finca = null) {
     const isEdit = !!finca;
     const body = `
@@ -166,7 +183,7 @@ const FincasModule = (() => {
       </div>
       <div class="form-group">
         <label>📍 Ubicación en mapa</label>
-        <p class="form-hint">Haz clic en el mapa para marcar la ubicación, o usa el botón GPS para obtener tu posición actual.</p>
+        <p class="form-hint">Haz clic en el mapa para marcar la ubicación, o usa el botón GPS.</p>
         <div id="finca-location-map" class="map-container" style="height:250px; margin-bottom:0.5rem;"></div>
         <div class="form-row" style="align-items:center;">
           <input type="number" step="any" id="finca-lat" value="${finca?.latitud || ''}" placeholder="Latitud" style="flex:1;">
@@ -180,7 +197,6 @@ const FincasModule = (() => {
        ${isEdit ? '<button class="btn btn-danger btn-sm" id="btn-delete-finca">🗑 Eliminar</button>' : ''}
        <button class="btn btn-primary" id="btn-save-finca">${isEdit ? 'Actualizar' : 'Crear Finca'}</button>`);
 
-    // Interactive location picker map
     let pickerMap = null;
     let pickerMarker = null;
 
@@ -210,7 +226,6 @@ const FincasModule = (() => {
       pickerMap = createMapWithLayers('finca-location-map', initLat, initLng, initZoom);
       if (!pickerMap) return;
 
-      // Add existing marker if editing
       if (finca?.latitud && finca?.longitud) {
         pickerMarker = L.marker([finca.latitud, finca.longitud], { draggable: true }).addTo(pickerMap);
         pickerMarker.on('dragend', () => {
@@ -220,7 +235,6 @@ const FincasModule = (() => {
         });
       }
 
-      // Click to place marker
       pickerMap.on('click', (e) => {
         updatePickerMarker(e.latlng.lat, e.latlng.lng);
         pickerMap.panTo(e.latlng);
@@ -245,7 +259,6 @@ const FincasModule = (() => {
       }
     });
 
-    // Sync manual lat/lng input to marker
     ['finca-lat', 'finca-lng'].forEach(id => {
       document.getElementById(id).addEventListener('change', () => {
         const lat = parseFloat(document.getElementById('finca-lat').value);
@@ -302,6 +315,9 @@ const FincasModule = (() => {
     });
   }
 
+  // =============================================
+  // FINCA DETAIL — Tabbed View
+  // =============================================
   async function showFincaDetail(fincaId) {
     const finca = await AgroDB.getById('fincas', fincaId);
     if (!finca) return;
@@ -322,67 +338,170 @@ const FincasModule = (() => {
         <div>
           <button class="btn btn-sm btn-secondary" id="btn-back-fincas">← Volver</button>
           <h2 style="margin-top:0.5rem;">${finca.nombre}</h2>
-          <p class="text-sm text-muted">${finca.ubicacion || ''} · ${Format.area(finca.area_total_m2)} · Riego: ${finca.sistema_riego || 'N/A'}</p>
+          <p class="text-sm text-muted">${finca.ubicacion || ''}</p>
         </div>
         ${isOwner ? '<button class="btn btn-outline btn-sm" id="btn-edit-finca">✏️ Editar</button>' : ''}
       </div>
 
-      <!-- Map / Areas with satellite -->
-      <div class="card">
-        <div class="card-header">
-          <h3>🗺️ Áreas Cultivables (Vista Satélite)</h3>
-          <button class="btn btn-primary btn-sm" id="btn-new-area">+ Área</button>
-        </div>
-        <div id="finca-map" class="map-container" style="height:350px;"></div>
-        ${areas.length === 0 ? '<p class="text-sm text-muted text-center mt-1">No hay áreas definidas. Crea una nueva área dibujándola sobre el mapa satelital.</p>' : ''}
-        <ul class="data-list" id="areas-list">
-          ${areas.map(a => `
-            <li class="data-list-item">
-              <div class="data-list-left">
-                <div class="flex gap-1" style="align-items:center;">
-                  <span class="area-color" style="background:${a.color || '#4CAF50'}"></span>
-                  <span class="data-list-title">${a.nombre}</span>
-                </div>
-                <div class="data-list-sub">${a.cultivo_actual_nombre || 'Sin cultivo'} · ${Format.area(a.area_m2)}</div>
-              </div>
-              <div class="data-list-actions">
-                <button class="btn btn-sm btn-outline btn-edit-area" data-id="${a.id}">✏️</button>
-                <button class="btn btn-sm btn-danger btn-del-area" data-id="${a.id}">🗑</button>
-              </div>
-            </li>
-          `).join('')}
-        </ul>
+      <div class="tabs">
+        <button class="tab ${currentFincaTab === 'areas' ? 'active' : ''}" data-tab="areas">🗺️ Áreas</button>
+        <button class="tab ${currentFincaTab === 'miembros' ? 'active' : ''}" data-tab="miembros">👥 Miembros (${miembrosInfo.length + 1})</button>
+        <button class="tab ${currentFincaTab === 'info' ? 'active' : ''}" data-tab="info">ℹ️ Info</button>
       </div>
 
-      <!-- Members -->
-      <div class="card">
-        <div class="card-header">
-          <h3>👥 Miembros</h3>
-          ${isOwner ? '<button class="btn btn-primary btn-sm" id="btn-add-member">+ Invitar</button>' : ''}
-        </div>
-        <div>
-          <div class="member-chip">
-            <div class="member-avatar">${Format.initials(AuthModule.getUser()?.nombre || '')}</div>
-            <span>${AuthModule.getUser()?.nombre || 'Propietario'}</span>
-            <span class="badge badge-green" style="margin-left:4px;">Dueño</span>
-          </div>
-          ${miembrosInfo.map(m => `
-            <div class="member-chip" data-member-id="${m.id}">
-              <div class="member-avatar">${Format.initials(m.nombre)}</div>
-              <span>${m.nombre} (${m.rol})</span>
-              ${m.estado_invitacion === 'pendiente' ? '<span class="badge badge-amber" style="margin-left:4px;">Pendiente</span>' : ''}
-              ${isOwner ? `<span class="member-remove" data-id="${m.id}">&times;</span>` : ''}
-            </div>
-          `).join('')}
-        </div>
-      </div>
+      <div id="finca-tab-content"></div>
     `;
 
-    // Init satellite map
+    // Tab switching
+    content.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        currentFincaTab = tab.dataset.tab;
+        content.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        renderFincaTab(fincaId, finca, areas, miembrosInfo, isOwner);
+      });
+    });
+
+    // Header events
+    document.getElementById('btn-back-fincas').addEventListener('click', () => {
+      currentFincaTab = 'areas'; // Reset to default
+      App.navigateTo('fincas');
+    });
+    document.getElementById('btn-edit-finca')?.addEventListener('click', () => showFincaForm(finca));
+
+    // Render current tab
+    renderFincaTab(fincaId, finca, areas, miembrosInfo, isOwner);
+  }
+
+  function renderFincaTab(fincaId, finca, areas, miembrosInfo, isOwner) {
+    // Cleanup map before switching
+    if (map) { map.remove(); map = null; }
+
+    const el = document.getElementById('finca-tab-content');
+    if (!el) return;
+
+    switch (currentFincaTab) {
+      case 'areas':
+        renderAreasTab(el, fincaId, finca, areas, isOwner);
+        break;
+      case 'miembros':
+        renderMiembrosTab(el, fincaId, finca, miembrosInfo, isOwner);
+        break;
+      case 'info':
+        renderInfoTab(el, finca, miembrosInfo, isOwner);
+        break;
+    }
+  }
+
+  // =============================================
+  // TAB: Áreas
+  // =============================================
+  function renderAreasTab(el, fincaId, finca, areas, isOwner) {
+    // Compute metrics
+    const totalArea = areas.reduce((s, a) => s + (a.area_m2 || 0), 0);
+    const grouped = {};
+    AREA_TYPES.forEach(t => { grouped[t.value] = []; });
+    areas.forEach(a => {
+      const tipo = a.tipo || 'otros';
+      if (!grouped[tipo]) grouped[tipo] = [];
+      grouped[tipo].push(a);
+    });
+
+    const productivo = grouped['productivo'] || [];
+    const proteccion = grouped['proteccion'] || [];
+    const productivoArea = productivo.reduce((s, a) => s + (a.area_m2 || 0), 0);
+    const proteccionArea = proteccion.reduce((s, a) => s + (a.area_m2 || 0), 0);
+    const pctProd = totalArea > 0 ? Math.round(productivoArea / totalArea * 100) : 0;
+    const pctProt = totalArea > 0 ? Math.round(proteccionArea / totalArea * 100) : 0;
+
+    el.innerHTML = `
+      <!-- Summary Metrics -->
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="s-icon green">🗺️</div>
+          <div class="s-data">
+            <div class="s-value">${Format.area(totalArea)}</div>
+            <div class="s-label">Área mapeada</div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="s-icon green">🌱</div>
+          <div class="s-data">
+            <div class="s-value">${productivo.length}</div>
+            <div class="s-label">Productivo (${pctProd}%)</div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="s-icon blue">🌳</div>
+          <div class="s-data">
+            <div class="s-value">${proteccion.length}</div>
+            <div class="s-label">Protección (${pctProt}%)</div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="s-icon amber">📊</div>
+          <div class="s-data">
+            <div class="s-value">${areas.length}</div>
+            <div class="s-label">Áreas definidas</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map -->
+      <div class="card">
+        <div class="card-header">
+          <h3>🗺️ Vista Satelital</h3>
+          <button class="btn btn-primary btn-sm" id="btn-new-area">+ Nueva Área</button>
+        </div>
+        <div id="finca-map" class="map-container" style="height:350px;"></div>
+      </div>
+
+      ${areas.length === 0 ? `
+        <div class="empty-state">
+          <div class="empty-icon">🗺️</div>
+          <h3>Define las áreas de tu finca</h3>
+          <p>Las áreas te permiten mapear parcelas productivas, zonas de protección, infraestructura y más. Dibuja tu primera área sobre el mapa satelital.</p>
+          <button class="btn btn-primary" id="btn-empty-new-area">+ Crear primera área</button>
+        </div>
+      ` : `
+        <!-- Area list grouped by type -->
+        <div class="card">
+          ${AREA_TYPES.map(type => {
+            const typeAreas = grouped[type.value] || [];
+            if (typeAreas.length === 0) return '';
+            const typeTotal = typeAreas.reduce((s, a) => s + (a.area_m2 || 0), 0);
+            return `
+              <div class="area-type-header">
+                <span class="badge ${type.badge}">${type.icon} ${type.label}</span>
+                <span class="text-sm text-muted">${typeAreas.length} área${typeAreas.length > 1 ? 's' : ''} · ${Format.area(typeTotal)}</span>
+              </div>
+              <ul class="data-list">
+                ${typeAreas.map(a => `
+                  <li class="data-list-item">
+                    <div class="data-list-left">
+                      <div class="flex gap-1" style="align-items:center;">
+                        <span class="area-color" style="background:${a.color || type.color}"></span>
+                        <span class="data-list-title">${a.nombre}</span>
+                      </div>
+                      <div class="data-list-sub">${a.cultivo_actual_nombre || (type.value === 'productivo' ? 'Sin cultivo' : type.label)} · ${Format.area(a.area_m2)}</div>
+                    </div>
+                    <div class="data-list-actions">
+                      <button class="btn btn-sm btn-outline btn-edit-area" data-id="${a.id}">✏️</button>
+                      <button class="btn btn-sm btn-danger btn-del-area" data-id="${a.id}">🗑</button>
+                    </div>
+                  </li>
+                `).join('')}
+              </ul>
+            `;
+          }).join('')}
+        </div>
+      `}
+    `;
+
+    // Init satellite map with labels
     setTimeout(() => {
       const lat = finca.latitud || -1.8312;
       const lng = finca.longitud || -79.9345;
-      if (map) { map.remove(); map = null; }
       map = createMapWithLayers('finca-map', lat, lng, 18);
       if (!map) return;
 
@@ -392,10 +511,29 @@ const FincasModule = (() => {
       areas.forEach(area => {
         if (area.geojson) {
           try {
+            const aType = getAreaType(area.tipo);
+            const aColor = area.color || aType.color;
             const geoLayer = L.geoJSON(JSON.parse(area.geojson), {
-              style: { color: area.color || '#4CAF50', fillColor: area.color || '#4CAF50', fillOpacity: 0.35, weight: 2 }
+              style: { color: aColor, fillColor: aColor, fillOpacity: 0.35, weight: 2 }
             });
-            geoLayer.bindPopup(`<b>${area.nombre}</b><br>${area.cultivo_actual_nombre || 'Sin cultivo'}<br>${Format.area(area.area_m2)}`);
+
+            // Popup with type badge
+            geoLayer.bindPopup(`
+              <b>${area.nombre}</b><br>
+              <span>${aType.icon} ${aType.label}</span><br>
+              ${area.cultivo_actual_nombre ? area.cultivo_actual_nombre + '<br>' : ''}
+              ${Format.area(area.area_m2)}
+            `);
+
+            // Permanent label on map
+            geoLayer.eachLayer(layer => {
+              layer.bindTooltip(area.nombre, {
+                permanent: true,
+                direction: 'center',
+                className: 'area-label-tooltip'
+              });
+            });
+
             geoLayer.addTo(drawnItems);
           } catch (e) { /* ignore */ }
         }
@@ -404,22 +542,20 @@ const FincasModule = (() => {
       if (drawnItems.getLayers().length > 0) {
         map.fitBounds(drawnItems.getBounds().pad(0.1));
       }
-      setTimeout(() => map.invalidateSize(), 200);
+      setTimeout(() => map && map.invalidateSize(), 200);
     }, 100);
 
     // Events
-    document.getElementById('btn-back-fincas').addEventListener('click', () => App.navigateTo('fincas'));
-    document.getElementById('btn-edit-finca')?.addEventListener('click', () => showFincaForm(finca));
-    document.getElementById('btn-new-area').addEventListener('click', () => showAreaForm(fincaId));
-    document.getElementById('btn-add-member')?.addEventListener('click', () => showAddMember(fincaId));
+    document.getElementById('btn-new-area')?.addEventListener('click', () => showAreaForm(fincaId));
+    document.getElementById('btn-empty-new-area')?.addEventListener('click', () => showAreaForm(fincaId));
 
-    content.querySelectorAll('.btn-edit-area').forEach(btn => {
+    el.querySelectorAll('.btn-edit-area').forEach(btn => {
       btn.addEventListener('click', async () => {
         const area = await AgroDB.getById('areas', btn.dataset.id);
         if (area) showAreaForm(fincaId, area);
       });
     });
-    content.querySelectorAll('.btn-del-area').forEach(btn => {
+    el.querySelectorAll('.btn-del-area').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (confirm('¿Eliminar esta área?')) {
           await AgroDB.remove('areas', btn.dataset.id);
@@ -428,7 +564,68 @@ const FincasModule = (() => {
         }
       });
     });
-    content.querySelectorAll('.member-remove').forEach(btn => {
+  }
+
+  // =============================================
+  // TAB: Miembros
+  // =============================================
+  function renderMiembrosTab(el, fincaId, finca, miembrosInfo, isOwner) {
+    const owner = AuthModule.getUser();
+    const ownerName = owner?.nombre || 'Propietario';
+    const ownerEmail = owner?.email || '';
+
+    el.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h3>👥 Equipo de la Finca</h3>
+          ${isOwner ? '<button class="btn btn-primary btn-sm" id="btn-add-member">+ Invitar</button>' : ''}
+        </div>
+
+        <ul class="data-list">
+          <!-- Owner -->
+          <li class="data-list-item">
+            <div class="data-list-left">
+              <div class="flex gap-1" style="align-items:center;">
+                <div class="member-avatar">${Format.initials(ownerName)}</div>
+                <div>
+                  <div class="data-list-title">${ownerName}</div>
+                  <div class="data-list-sub">${ownerEmail}</div>
+                </div>
+              </div>
+            </div>
+            <span class="badge badge-green">Dueño</span>
+          </li>
+
+          ${miembrosInfo.length === 0 ? '' : miembrosInfo.map(m => `
+            <li class="data-list-item" data-member-id="${m.id}">
+              <div class="data-list-left">
+                <div class="flex gap-1" style="align-items:center;">
+                  <div class="member-avatar">${Format.initials(m.nombre)}</div>
+                  <div>
+                    <div class="data-list-title">${m.nombre}</div>
+                    <div class="data-list-sub">${m.email || m.usuario_email || ''} · ${m.rol}
+                      ${m.estado_invitacion === 'pendiente' ? ' <span class="badge badge-amber">Pendiente</span>' : ''}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              ${isOwner ? `<button class="btn btn-sm btn-danger member-remove" data-id="${m.id}">✕</button>` : ''}
+            </li>
+          `).join('')}
+        </ul>
+
+        ${miembrosInfo.length === 0 ? `
+          <div class="empty-state" style="padding:2rem 1rem;">
+            <p>No hay miembros adicionales. ${isOwner ? 'Invita a tu equipo para colaborar.' : ''}</p>
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    // Events
+    document.getElementById('btn-add-member')?.addEventListener('click', () => showAddMember(fincaId));
+
+    el.querySelectorAll('.member-remove').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (confirm('¿Remover este miembro?')) {
           await AgroDB.remove('finca_miembros', btn.dataset.id);
@@ -439,17 +636,109 @@ const FincasModule = (() => {
     });
   }
 
+  // =============================================
+  // TAB: Info
+  // =============================================
+  function renderInfoTab(el, finca, miembrosInfo, isOwner) {
+    const riegoLabels = {
+      canales_infiltracion: 'Canales con infiltración',
+      goteo: 'Goteo',
+      aspersion: 'Aspersión',
+      gravedad: 'Gravedad',
+      ninguno: 'Ninguno / Secano',
+      otro: 'Otro'
+    };
+
+    el.innerHTML = `
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="s-icon green">📍</div>
+          <div class="s-data">
+            <div class="s-value" style="font-size:0.95rem;">${finca.ubicacion || 'Sin ubicación'}</div>
+            <div class="s-label">Ubicación</div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="s-icon green">📐</div>
+          <div class="s-data">
+            <div class="s-value">${Format.area(finca.area_total_m2 || 0)}</div>
+            <div class="s-label">Área total declarada</div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="s-icon blue">💧</div>
+          <div class="s-data">
+            <div class="s-value" style="font-size:0.95rem;">${riegoLabels[finca.sistema_riego] || finca.sistema_riego || 'N/A'}</div>
+            <div class="s-label">Sistema de riego</div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="s-icon brown">👥</div>
+          <div class="s-data">
+            <div class="s-value">${miembrosInfo.length + 1}</div>
+            <div class="s-label">Miembros</div>
+          </div>
+        </div>
+      </div>
+
+      ${finca.descripcion ? `
+        <div class="card">
+          <h3 style="margin-bottom:0.5rem;">Descripción</h3>
+          <p class="text-sm">${finca.descripcion}</p>
+        </div>
+      ` : ''}
+
+      ${finca.latitud ? `
+        <div class="card">
+          <h3 style="margin-bottom:0.5rem;">Ubicación en Mapa</h3>
+          <div id="info-map" class="map-container" style="height:250px;"></div>
+          <p class="text-sm text-muted mt-1">📍 ${finca.latitud?.toFixed(5)}, ${finca.longitud?.toFixed(5)}</p>
+        </div>
+      ` : ''}
+
+      ${isOwner ? `
+        <div style="text-align:center; margin-top:1rem;">
+          <button class="btn btn-outline btn-sm" id="btn-edit-finca-info">✏️ Editar información</button>
+        </div>
+      ` : ''}
+    `;
+
+    // Info map
+    if (finca.latitud) {
+      setTimeout(() => {
+        map = createMapWithLayers('info-map', finca.latitud, finca.longitud, 16);
+        if (map) {
+          L.marker([finca.latitud, finca.longitud]).addTo(map);
+          setTimeout(() => map && map.invalidateSize(), 200);
+        }
+      }, 100);
+    }
+
+    document.getElementById('btn-edit-finca-info')?.addEventListener('click', () => showFincaForm(finca));
+  }
+
+  // =============================================
+  // AREA FORM (Create / Edit) with Type Selector
+  // =============================================
   async function showAreaForm(fincaId, area = null) {
     const isEdit = !!area;
     const cultivos = await AgroDB.getByIndex('cultivos_catalogo', 'finca_id', fincaId);
+    const currentTipo = area?.tipo || 'productivo';
 
     const body = `
       <div class="form-group">
         <label>Nombre del área *</label>
-        <input type="text" id="area-nombre" value="${area?.nombre || ''}" placeholder="Parcela A, Lote 1...">
+        <input type="text" id="area-nombre" value="${area?.nombre || ''}" placeholder="Parcela A, Lote 1, Zona Ripiaria...">
+      </div>
+      <div class="form-group">
+        <label>Tipo de área *</label>
+        <p class="form-hint">Clasifica según su uso principal</p>
+        <select id="area-tipo">
+          ${AREA_TYPES.map(t => `<option value="${t.value}" ${currentTipo === t.value ? 'selected' : ''}>${t.icon} ${t.label}</option>`).join('')}
+        </select>
       </div>
       <div class="form-row">
-        <div class="form-group">
+        <div class="form-group" id="area-cultivo-group" style="display:${currentTipo === 'productivo' ? '' : 'none'}">
           <label>Cultivo actual</label>
           <select id="area-cultivo">
             <option value="">Sin cultivo</option>
@@ -458,16 +747,16 @@ const FincasModule = (() => {
         </div>
         <div class="form-group">
           <label>Área (m²)</label>
-          <input type="number" id="area-m2" value="${area?.area_m2 || ''}" placeholder="Auto-calculada al dibujar">
+          <input type="number" id="area-m2" value="${area?.area_m2 || ''}" placeholder="Auto al dibujar">
         </div>
       </div>
       <div class="form-group">
         <label>Color en mapa</label>
-        <input type="color" id="area-color" value="${area?.color || '#4CAF50'}">
+        <input type="color" id="area-color" value="${area?.color || getAreaType(currentTipo).color}">
       </div>
       <div class="form-group">
         <label>📡 Dibujar área en vista satelital</label>
-        <p class="form-hint">Dibuja el polígono del área. Las áreas existentes se muestran como referencia (línea punteada).</p>
+        <p class="form-hint">Dibuja el polígono. Las áreas existentes se muestran como referencia (línea punteada).</p>
         <div id="area-map-draw" class="map-container" style="height:300px;"></div>
       </div>
       <div class="form-group">
@@ -481,6 +770,18 @@ const FincasModule = (() => {
        ${isEdit ? `<button class="btn btn-danger btn-sm" id="btn-delete-area">🗑 Eliminar</button>` : ''}
        <button class="btn btn-primary" id="btn-save-area">Guardar</button>`);
 
+    // Type selector: auto-set color and toggle cultivo
+    document.getElementById('area-tipo').addEventListener('change', (e) => {
+      const typeInfo = getAreaType(e.target.value);
+      // Auto-set color unless user already changed it manually
+      document.getElementById('area-color').value = typeInfo.color;
+      // Show cultivo selector only for productive areas
+      const cultivoGroup = document.getElementById('area-cultivo-group');
+      if (cultivoGroup) {
+        cultivoGroup.style.display = e.target.value === 'productivo' ? '' : 'none';
+      }
+    });
+
     let drawMap = null;
     let drawLayer = new L.FeatureGroup();
     let areaGeoJSON = area?.geojson ? JSON.parse(area.geojson) : null;
@@ -489,15 +790,15 @@ const FincasModule = (() => {
       const mapContainer = document.getElementById('area-map-draw');
       if (!mapContainer || typeof L === 'undefined') return;
 
-      const finca = await AgroDB.getById('fincas', fincaId);
-      const lat = finca?.latitud || -1.8312;
-      const lng = finca?.longitud || -79.9345;
+      const fincaData = await AgroDB.getById('fincas', fincaId);
+      const lat = fincaData?.latitud || -1.8312;
+      const lng = fincaData?.longitud || -79.9345;
 
       drawMap = createMapWithLayers('area-map-draw', lat, lng, 19);
       if (!drawMap) return;
       drawMap.addLayer(drawLayer);
 
-      // === REQ 3: Show existing areas as read-only reference ===
+      // Show existing areas as read-only reference
       const allAreas = await AgroDB.getByIndex('areas', 'finca_id', fincaId);
       const otherAreas = allAreas.filter(a => !isEdit || a.id !== area.id);
       const refGroup = new L.FeatureGroup();
@@ -536,7 +837,6 @@ const FincasModule = (() => {
         layer.eachLayer(l => drawLayer.addLayer(l));
         drawMap.fitBounds(drawLayer.getBounds().pad(0.1));
       } else if (refGroup.getLayers().length > 0) {
-        // Fit to reference areas if no current area
         drawMap.fitBounds(refGroup.getBounds().pad(0.2));
       }
 
@@ -550,7 +850,6 @@ const FincasModule = (() => {
       });
       drawMap.addControl(drawControl);
 
-      // === REQ 1: Auto-recalculate area on create AND edit ===
       drawMap.on(L.Draw.Event.CREATED, (e) => {
         drawLayer.clearLayers();
         drawLayer.addLayer(e.layer);
@@ -563,7 +862,6 @@ const FincasModule = (() => {
 
       drawMap.on(L.Draw.Event.EDITED, (e) => {
         areaGeoJSON = drawLayer.toGeoJSON();
-        // Recalculate area for each edited layer
         e.layers.eachLayer(layer => {
           const m2 = calculateAreaFromLayer(layer);
           if (m2 > 0) {
@@ -593,12 +891,15 @@ const FincasModule = (() => {
     document.getElementById('btn-save-area').addEventListener('click', async () => {
       const nombre = document.getElementById('area-nombre').value.trim();
       if (!nombre) { App.showToast('El nombre es obligatorio', 'warning'); return; }
-      const cultivoId = document.getElementById('area-cultivo').value;
+
+      const tipo = document.getElementById('area-tipo').value;
+      const cultivoId = tipo === 'productivo' ? document.getElementById('area-cultivo')?.value : null;
       let cultivoNombre = '';
       if (cultivoId) { const c = await AgroDB.getById('cultivos_catalogo', cultivoId); cultivoNombre = c ? c.nombre : ''; }
 
       const data = {
         nombre, finca_id: fincaId,
+        tipo,
         cultivo_actual_id: cultivoId || null,
         cultivo_actual_nombre: cultivoNombre,
         area_m2: parseFloat(document.getElementById('area-m2').value) || 0,
@@ -629,7 +930,9 @@ const FincasModule = (() => {
     return Math.abs(area / 2) * 111320 * 111320;
   }
 
-  // === REQ 6: Member invitation with Supabase email validation ===
+  // =============================================
+  // MEMBER INVITATION with email validation
+  // =============================================
   async function showAddMember(fincaId) {
     const body = `
       <div class="form-group">
@@ -655,7 +958,6 @@ const FincasModule = (() => {
       `<button class="btn btn-secondary" onclick="App.closeModal()">Cancelar</button>
        <button class="btn btn-primary" id="btn-save-member">Invitar</button>`);
 
-    // Email validation against Supabase
     let foundUserId = null;
     let foundNombre = '';
 
@@ -676,11 +978,10 @@ const FincasModule = (() => {
             foundUserId = profiles[0].id;
             foundNombre = profiles[0].nombre || '';
             statusEl.innerHTML = `<span style="color:var(--green-700);">✅ Usuario encontrado: <b>${foundNombre || email}</b></span>`;
-            // Auto-fill name if empty
             const nameInput = document.getElementById('member-nombre');
             if (!nameInput.value && foundNombre) nameInput.value = foundNombre;
           } else {
-            statusEl.innerHTML = '<span style="color:var(--amber-700);">⚠️ Correo no registrado en AgroFinca. Se creará invitación pendiente.</span>';
+            statusEl.innerHTML = '<span style="color:var(--amber-700);">⚠️ Correo no registrado. Se creará invitación pendiente.</span>';
           }
         } else {
           statusEl.innerHTML = '<span style="color:var(--gray-500);">📡 Sin conexión — se verificará al sincronizar</span>';
@@ -694,7 +995,6 @@ const FincasModule = (() => {
       const email = document.getElementById('member-email').value.trim().toLowerCase();
       if (!email) { App.showToast('El correo es obligatorio', 'warning'); return; }
 
-      // Check for duplicates
       const existingMembers = await AgroDB.getByIndex('finca_miembros', 'finca_id', fincaId);
       if (existingMembers.find(m => m.usuario_email === email)) {
         App.showToast('Este usuario ya es miembro de la finca', 'warning');

@@ -1237,6 +1237,30 @@ details summary:hover {
   box-shadow: none !important;
 }
 
+/* Area label tooltips on satellite map */
+.area-label-tooltip {
+  background: rgba(0, 0, 0, 0.75) !important;
+  border: none !important;
+  border-radius: 4px !important;
+  padding: 3px 8px !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  color: white !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3) !important;
+  white-space: nowrap !important;
+}
+.area-label-tooltip::before { display: none !important; }
+
+/* Area type section headers */
+.area-type-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0 0.3rem;
+  margin-top: 0.5rem;
+}
+.area-type-header:first-child { margin-top: 0; }
+
 /* --- Print styles --- */
 @media print {
   .top-bar, .bottom-nav, .sidebar, .fab, .action-sheet { display: none !important; }

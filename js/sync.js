@@ -1,9 +1,9 @@
 // ============================================
-// AgroFinca - Sync Engine (v2)
+// AgroFinca - Sync Engine (v3)
 // Bidirectional sync: IndexedDB <-> Supabase
 // Offline-first: IndexedDB is primary DB
-// Fixes: push ordering, local-only field stripping,
-// usuarios exclusion, retry logic, better error handling
+// Fixes v2: table-aware cleanRecord, cascade stop,
+// token refresh, getUpdatedSince fix for fincas
 // ============================================
 
 const SyncEngine = (() => {
@@ -24,7 +24,7 @@ const SyncEngine = (() => {
 
   // Push order: parent tables must be pushed before child tables (FK dependencies)
   const PUSH_ORDER = [
-    'fincas',                     // Level 0: no FK deps (propietario_id is auth.uid, not a FK to our tables)
+    'fincas',                     // Level 0: no FK deps
     'finca_miembros',             // Level 1: depends on fincas
     'areas',                      // Level 1: depends on fincas
     'cultivos_catalogo',          // Level 1: depends on fincas
@@ -53,7 +53,7 @@ const SyncEngine = (() => {
     'payment_history'       // Managed by Edge Functions
   ];
 
-  // Fields to strip before pushing to Supabase (local-only fields)
+  // Fields to ALWAYS strip from ALL tables before pushing to Supabase
   const LOCAL_ONLY_FIELDS = [
     'synced',           // Local sync flag
     'password_hash',    // Local auth only
@@ -61,6 +61,33 @@ const SyncEngine = (() => {
     'es_offline',       // Local flag
     '_role'             // Computed field for UI
   ];
+
+  // Known columns per Supabase table - ONLY these columns are sent
+  // Any field NOT in this list gets stripped before pushing
+  // This prevents PostgREST 400 errors from unknown columns
+  const KNOWN_COLUMNS = {
+    fincas: ['id', 'nombre', 'ubicacion', 'descripcion', 'area_total_m2', 'sistema_riego', 'latitud', 'longitud', 'propietario_id', 'modificado_por', 'created_at', 'updated_at'],
+    finca_miembros: ['id', 'finca_id', 'usuario_id', 'usuario_email', 'rol', 'invitado_por', 'estado_invitacion', 'created_at', 'updated_at'],
+    areas: ['id', 'finca_id', 'nombre', 'tipo', 'area_m2', 'cultivo_actual_id', 'cultivo_actual_nombre', 'geojson', 'latitud', 'longitud', 'color', 'notas', 'created_at', 'updated_at'],
+    cultivos_catalogo: ['id', 'finca_id', 'nombre', 'tipo', 'unidad_produccion', 'ciclo_dias', 'color', 'icono', 'descripcion', 'es_predeterminado', 'rendimiento_referencia', 'unidad_rendimiento', 'created_at', 'updated_at'],
+    ciclos_productivos: ['id', 'finca_id', 'area_id', 'cultivo_id', 'cultivo_nombre', 'area_nombre', 'nombre', 'fecha_inicio', 'fecha_fin', 'fecha_fin_real', 'estado', 'notas', 'created_at', 'updated_at'],
+    cosechas: ['id', 'finca_id', 'ciclo_id', 'cultivo_id', 'cultivo_nombre', 'area_id', 'fecha', 'cantidad', 'unidad', 'calidad', 'notas', 'created_at', 'updated_at'],
+    ventas: ['id', 'finca_id', 'cultivo_id', 'cultivo_nombre', 'producto', 'fecha', 'cantidad', 'unidad', 'precio_unitario', 'total', 'comprador', 'notas', 'created_at', 'updated_at'],
+    costos: ['id', 'finca_id', 'cultivo_id', 'cultivo_nombre', 'ciclo_id', 'categoria', 'subcategoria', 'fecha', 'monto', 'descripcion', 'proveedor', 'notas', 'created_at', 'updated_at'],
+    colmenas: ['id', 'finca_id', 'nombre', 'tipo', 'estado', 'ubicacion', 'fecha_instalacion', 'notas', 'created_at', 'updated_at'],
+    inspecciones_colmena: ['id', 'finca_id', 'colmena_id', 'fecha', 'tipo', 'estado_general', 'poblacion', 'reina_vista', 'crias', 'miel', 'plagas', 'notas', 'created_at', 'updated_at'],
+    camas_lombricompost: ['id', 'finca_id', 'nombre', 'tipo', 'estado', 'ubicacion', 'fecha_inicio', 'notas', 'created_at', 'updated_at'],
+    registros_lombricompost: ['id', 'finca_id', 'cama_id', 'fecha', 'tipo', 'descripcion', 'cantidad', 'unidad', 'notas', 'created_at', 'updated_at'],
+    tareas: ['id', 'finca_id', 'titulo', 'descripcion', 'fecha_programada', 'fecha_completada', 'estado', 'prioridad', 'asignado_a', 'area_id', 'area_nombre', 'ciclo_id', 'ciclo_nombre', 'cultivo_id', 'cultivo_nombre', 'hora_inicio', 'duracion_minutos', 'recurrente', 'frecuencia_dias', 'completada_en', 'completada_por', 'creado_por', 'notas', 'created_at', 'updated_at'],
+    inspecciones: ['id', 'finca_id', 'area_id', 'area_nombre', 'ciclo_id', 'cultivo_nombre', 'fecha', 'tipo', 'estado_general', 'plagas', 'enfermedades', 'recomendaciones', 'notas', 'created_at', 'updated_at'],
+    fotos_inspeccion: ['id', 'finca_id', 'inspeccion_id', 'url', 'descripcion', 'tipo', 'created_at', 'updated_at'],
+    aplicaciones_fitosanitarias: ['id', 'finca_id', 'area_id', 'ciclo_id', 'cultivo_nombre', 'destino', 'tipo_producto', 'nombre_producto', 'ingrediente_activo', 'fecha', 'producto', 'dosis', 'unidad_dosis', 'metodo', 'objetivo', 'periodo_carencia_dias', 'area_aplicada_m2', 'colmena_id', 'cama_id', 'notas', 'created_at', 'updated_at'],
+    lotes_animales: ['id', 'finca_id', 'nombre', 'tipo_animal', 'cantidad', 'raza', 'area_id', 'notas', 'created_at', 'updated_at'],
+    registros_animales: ['id', 'finca_id', 'lote_id', 'tipo', 'fecha', 'descripcion', 'cantidad', 'costo', 'producto', 'notas', 'created_at', 'updated_at']
+  };
+
+  // Tables that DON'T have finca_id column (used in pull to skip finca_id filter)
+  const TABLES_WITHOUT_FINCA_ID = ['fincas'];
 
   function setStatusCallback(callback) {
     onStatusChange = callback;
@@ -120,13 +147,20 @@ const SyncEngine = (() => {
     try {
       updateStatus('syncing', 0);
 
-      // 0. Fix orphaned records (propietario_id mismatch with auth.uid)
+      // 0. Refresh token to prevent 401s
+      try {
+        await SupabaseClient.refreshSession();
+      } catch (e) {
+        console.warn('[Sync] Token refresh failed:', e.message);
+      }
+
+      // 1. Fix orphaned records (propietario_id mismatch with auth.uid)
       await fixOrphanedRecords();
 
-      // 1. Push local changes to Supabase
+      // 2. Push local changes to Supabase
       await pushChanges();
 
-      // 2. Pull remote changes to local
+      // 3. Pull remote changes to local
       await pullChanges();
 
       // Update timestamp
@@ -135,8 +169,13 @@ const SyncEngine = (() => {
 
       const pending = await AgroDB.getPendingSyncCount();
       updateStatus('online', pending);
+      if (pending === 0) {
+        console.log('[Sync] ✅ All synced successfully');
+      } else {
+        console.log(`[Sync] ⚠️ ${pending} items still pending`);
+      }
     } catch (err) {
-      console.error('Sync error:', err);
+      console.error('[Sync] Error:', err);
       const pending = await AgroDB.getPendingSyncCount();
       updateStatus(isOnline() ? 'online' : 'offline', pending);
     } finally {
@@ -144,12 +183,29 @@ const SyncEngine = (() => {
     }
   }
 
-  // Clean a record by removing local-only fields
-  function cleanRecord(record) {
+  // Clean a record by removing local-only fields AND unknown columns for the table
+  function cleanRecord(table, record) {
     const clean = { ...record };
+
+    // 1. Always remove global local-only fields
     for (const field of LOCAL_ONLY_FIELDS) {
       delete clean[field];
     }
+
+    // 2. If we know the columns for this table, strip anything not in the list
+    const knownCols = KNOWN_COLUMNS[table];
+    if (knownCols) {
+      for (const key of Object.keys(clean)) {
+        if (!knownCols.includes(key)) {
+          // Don't log for common local fields to reduce noise
+          if (!LOCAL_ONLY_FIELDS.includes(key)) {
+            console.debug(`[Sync] Stripping unknown field "${key}" from ${table}`);
+          }
+          delete clean[key];
+        }
+      }
+    }
+
     return clean;
   }
 
@@ -159,7 +215,6 @@ const SyncEngine = (() => {
   }
 
   // Fix records created with a local/offline user ID that don't match auth.uid()
-  // This happens when a user creates data offline/with wrong ID then logs in online
   async function fixOrphanedRecords() {
     try {
       const authUser = await SupabaseClient.getUser();
@@ -167,10 +222,10 @@ const SyncEngine = (() => {
 
       const authUid = authUser.id;
 
-      // Fix fincas with mismatched propietario_id
+      // Fix fincas with mismatched propietario_id (check ALL fincas, not just unsynced)
       const allFincas = await AgroDB.getAll('fincas');
       for (const finca of allFincas) {
-        if (finca.propietario_id && finca.propietario_id !== authUid && !finca.synced) {
+        if (finca.propietario_id && finca.propietario_id !== authUid) {
           console.log(`[Sync] Fixing orphaned finca "${finca.nombre}": ${finca.propietario_id} -> ${authUid}`);
           await AgroDB.update('fincas', finca.id, { propietario_id: authUid });
         }
@@ -196,6 +251,11 @@ const SyncEngine = (() => {
     let processed = 0;
     let errors = 0;
 
+    // Track which finca_ids have been successfully pushed
+    // If a finca push fails, we skip ALL its child records
+    const failedFincaIds = new Set();
+    const succeededFincaIds = new Set();
+
     // Group queue items by table for ordered pushing
     const byTable = {};
     for (const item of queue) {
@@ -205,7 +265,6 @@ const SyncEngine = (() => {
 
     // Process tables in push order (parent tables first)
     const orderedTables = [...PUSH_ORDER];
-    // Add any tables from queue that aren't in PUSH_ORDER (shouldn't happen, but safe)
     for (const table of Object.keys(byTable)) {
       if (!orderedTables.includes(table)) orderedTables.push(table);
     }
@@ -216,7 +275,6 @@ const SyncEngine = (() => {
 
       // Skip local-only tables entirely
       if (isLocalOnly(table)) {
-        // Clear these from sync queue since they should never sync
         for (const item of items) {
           await AgroDB.clearSyncQueueItem(item.id);
         }
@@ -225,26 +283,50 @@ const SyncEngine = (() => {
         continue;
       }
 
+      console.log(`[Sync] Pushing ${items.length} items for ${table}...`);
+
       for (const item of items) {
         try {
           if (item.action === 'upsert') {
             const record = await AgroDB.getById(item.store_name, item.record_id);
-            if (record) {
-              // Remove local-only fields before sending
-              const clean = cleanRecord(record);
-              const result = await SupabaseClient.upsert(item.store_name, clean);
-              if (result) {
-                await AgroDB.markSynced(item.store_name, item.record_id);
-                await AgroDB.clearSyncQueueItem(item.id);
-                processed++;
-              } else {
-                errors++;
-                console.warn(`[Sync] Upsert returned null for ${item.store_name}/${item.record_id}`);
-              }
-            } else {
+            if (!record) {
               // Record was deleted locally, remove from queue
               await AgroDB.clearSyncQueueItem(item.id);
               processed++;
+              continue;
+            }
+
+            // CASCADE CHECK: If this is a child table, check if parent finca succeeded
+            if (table !== 'fincas' && record.finca_id) {
+              if (failedFincaIds.has(record.finca_id)) {
+                console.warn(`[Sync] Skipping ${table}/${item.record_id} - parent finca ${record.finca_id} failed`);
+                errors++;
+                continue; // Don't clear from queue - will retry next cycle
+              }
+            }
+
+            // Remove local-only fields AND unknown columns before sending
+            const clean = cleanRecord(table, record);
+            const result = await SupabaseClient.upsert(table, clean);
+
+            if (result) {
+              await AgroDB.markSynced(item.store_name, item.record_id);
+              await AgroDB.clearSyncQueueItem(item.id);
+              processed++;
+
+              // Track finca success for cascade
+              if (table === 'fincas') {
+                succeededFincaIds.add(record.id);
+              }
+            } else {
+              errors++;
+              // Track finca failure for cascade
+              if (table === 'fincas') {
+                failedFincaIds.add(record.id);
+                console.error(`[Sync] ❌ FINCA PUSH FAILED for "${record.nombre}" (${record.id}) - all child records will be skipped`);
+              } else {
+                console.warn(`[Sync] Upsert returned null for ${table}/${item.record_id}`);
+              }
             }
           } else if (item.action === 'delete') {
             const result = await SupabaseClient.deleteRecord(item.store_name, item.record_id);
@@ -257,11 +339,21 @@ const SyncEngine = (() => {
           }
         } catch (err) {
           errors++;
-          console.error(`[Sync] Push error for ${item.store_name}/${item.record_id}:`, err.message || err);
+          console.error(`[Sync] Push error for ${table}/${item.record_id}:`, err.message || err);
+          if (table === 'fincas') {
+            // Extract finca id from the queue item
+            try {
+              const rec = await AgroDB.getById('fincas', item.record_id);
+              if (rec) failedFincaIds.add(rec.id);
+            } catch (_) {}
+          }
         }
       }
     }
 
+    if (failedFincaIds.size > 0) {
+      console.warn(`[Sync] ⚠️ ${failedFincaIds.size} finca(s) failed to push. Their child records were skipped.`);
+    }
     console.log(`[Sync] Push complete: ${processed} processed, ${errors} errors`);
     return processed;
   }
@@ -273,7 +365,14 @@ const SyncEngine = (() => {
 
     for (const table of SYNC_TABLES) {
       try {
-        const remoteRecords = await SupabaseClient.getUpdatedSince(table, since, fincaId);
+        // For fincas table, don't pass fincaId filter (fincas doesn't have finca_id column)
+        const useFilter = TABLES_WITHOUT_FINCA_ID.includes(table) ? null : fincaId;
+        const remoteRecords = await SupabaseClient.getUpdatedSince(table, since, useFilter);
+
+        if (remoteRecords.length > 0) {
+          console.log(`[Sync] Pull: ${remoteRecords.length} updates from ${table}`);
+        }
+
         for (const remote of remoteRecords) {
           const local = await AgroDB.getById(table, remote.id);
           if (!local) {
@@ -297,11 +396,18 @@ const SyncEngine = (() => {
       const request = indexedDB.open('agrofinca_db');
       request.onsuccess = (e) => {
         const database = e.target.result;
+        // Check if the object store exists before writing
+        if (!database.objectStoreNames.contains(storeName)) {
+          console.warn(`[Sync] Object store "${storeName}" not found in IndexedDB, skipping`);
+          database.close();
+          resolve();
+          return;
+        }
         const tx = database.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
         const putReq = store.put(record);
-        putReq.onsuccess = () => resolve();
-        putReq.onerror = () => reject(putReq.error);
+        putReq.onsuccess = () => { database.close(); resolve(); };
+        putReq.onerror = () => { database.close(); reject(putReq.error); };
       };
       request.onerror = () => reject(request.error);
     });

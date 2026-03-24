@@ -232,18 +232,25 @@ const SupabaseClient = (() => {
   }
 
   // Get records updated after a timestamp
+  // fincaId is optional - only added if the table has a finca_id column
+  // The caller (SyncEngine) is responsible for NOT passing fincaId for tables like 'fincas'
   async function getUpdatedSince(table, since, fincaId) {
     if (!accessToken) return [];
     let url = `${SUPABASE_URL}/rest/v1/${table}?select=*&updated_at=gte.${encodeURIComponent(since)}`;
     if (fincaId) {
       url += `&finca_id=eq.${fincaId}`;
     }
-    url += '&order=updated_at.asc';
+    url += '&order=updated_at.asc&limit=500';
     try {
       const res = await fetch(url, { headers: getHeaders() });
-      if (!res.ok) return [];
+      if (!res.ok) {
+        const errText = await res.text();
+        console.warn(`[Supabase] Pull ${table} failed (${res.status}):`, errText);
+        return [];
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      console.warn(`[Supabase] Pull ${table} network error:`, err.message);
       return [];
     }
   }

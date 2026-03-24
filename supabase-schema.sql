@@ -662,9 +662,20 @@ GRANT SELECT ON public.user_profiles TO anon;
 -- Run these after initial schema is in place
 -- ============================================
 
+DO $$
+BEGIN
+  RAISE NOTICE '🔄 Iniciando migraciones v2.1 - cultivos_catalogo...';
+END $$;
+
 -- Add rendimiento fields to cultivos_catalogo
 ALTER TABLE cultivos_catalogo ADD COLUMN IF NOT EXISTS rendimiento_referencia NUMERIC;
 ALTER TABLE cultivos_catalogo ADD COLUMN IF NOT EXISTS unidad_rendimiento TEXT;
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ cultivos_catalogo: rendimiento_referencia, unidad_rendimiento';
+  RAISE NOTICE '🔄 Migrando tareas (campos agenda)...';
+END $$;
 
 -- Add agenda fields to tareas
 ALTER TABLE tareas ADD COLUMN IF NOT EXISTS hora_inicio TIME;
@@ -681,13 +692,160 @@ ALTER TABLE tareas ADD COLUMN IF NOT EXISTS completada_por TEXT;
 ALTER TABLE tareas ADD COLUMN IF NOT EXISTS creado_por TEXT;
 
 -- Fix asignado_a from UUID to TEXT (JS uses name strings)
-ALTER TABLE tareas ALTER COLUMN asignado_a TYPE TEXT USING asignado_a::TEXT;
+DO $$ BEGIN
+  ALTER TABLE tareas ALTER COLUMN asignado_a TYPE TEXT USING asignado_a::TEXT;
+  RAISE NOTICE '✅ tareas: 12 columnas agenda + asignado_a TEXT';
+EXCEPTION WHEN others THEN
+  RAISE NOTICE '⚠️ tareas.asignado_a ya es TEXT (omitido)';
+END $$;
+
+-- ============================================
+-- 22b. SCHEMA MIGRATIONS (v2.2) - Denormalized _nombre fields
+-- These are cached display names used by the JS app to avoid JOINs
+-- ============================================
+
+DO $$
+BEGIN
+  RAISE NOTICE '🔄 Iniciando migraciones v2.2 - campos denormalizados...';
+END $$;
+
+-- finca_miembros: invitation tracking
+ALTER TABLE finca_miembros ADD COLUMN IF NOT EXISTS estado_invitacion TEXT DEFAULT 'activa';
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ finca_miembros: estado_invitacion';
+END $$;
+
+-- areas: current crop name cache
+ALTER TABLE areas ADD COLUMN IF NOT EXISTS cultivo_actual_nombre TEXT;
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ areas: cultivo_actual_nombre';
+END $$;
+
+-- ciclos_productivos: denormalized names + real end date
+ALTER TABLE ciclos_productivos ADD COLUMN IF NOT EXISTS cultivo_nombre TEXT;
+ALTER TABLE ciclos_productivos ADD COLUMN IF NOT EXISTS area_nombre TEXT;
+ALTER TABLE ciclos_productivos ADD COLUMN IF NOT EXISTS fecha_fin_real DATE;
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ ciclos_productivos: cultivo_nombre, area_nombre, fecha_fin_real';
+END $$;
+
+-- cosechas: denormalized crop name
+ALTER TABLE cosechas ADD COLUMN IF NOT EXISTS cultivo_nombre TEXT;
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ cosechas: cultivo_nombre';
+END $$;
+
+-- ventas: product name + crop name
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS producto TEXT;
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS cultivo_nombre TEXT;
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ ventas: producto, cultivo_nombre';
+END $$;
+
+-- costos: crop name
+ALTER TABLE costos ADD COLUMN IF NOT EXISTS cultivo_nombre TEXT;
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ costos: cultivo_nombre';
+END $$;
+
+-- inspecciones: denormalized names
+ALTER TABLE inspecciones ADD COLUMN IF NOT EXISTS cultivo_nombre TEXT;
+ALTER TABLE inspecciones ADD COLUMN IF NOT EXISTS area_nombre TEXT;
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ inspecciones: cultivo_nombre, area_nombre';
+END $$;
+
+-- aplicaciones_fitosanitarias: extended fields
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS cultivo_nombre TEXT;
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS destino TEXT;
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS tipo_producto TEXT;
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS nombre_producto TEXT;
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS ingrediente_activo TEXT;
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS unidad_dosis TEXT;
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS area_aplicada_m2 NUMERIC;
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS colmena_id UUID;
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS cama_id UUID;
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ aplicaciones_fitosanitarias: 9 columnas nuevas';
+END $$;
+
+-- registros_animales: product field
+ALTER TABLE registros_animales ADD COLUMN IF NOT EXISTS producto TEXT;
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ registros_animales: producto';
+  RAISE NOTICE '🎉 Migraciones v2.2 completadas exitosamente';
+END $$;
 
 
 -- ============================================
--- 23. VERIFY: Check all tables exist
+-- 23. VERIFY: Check all tables and new columns exist
 -- ============================================
-SELECT table_name FROM information_schema.tables
-WHERE table_schema = 'public'
-AND table_type = 'BASE TABLE'
-ORDER BY table_name;
+
+-- Show all tables
+SELECT table_name, (
+  SELECT count(*) FROM information_schema.columns c WHERE c.table_name = t.table_name AND c.table_schema = 'public'
+) as column_count
+FROM information_schema.tables t
+WHERE t.table_schema = 'public'
+AND t.table_type = 'BASE TABLE'
+ORDER BY t.table_name;
+
+-- Verify critical new columns exist
+DO $$
+DECLARE
+  missing_count INTEGER := 0;
+BEGIN
+  -- Check finca_miembros.estado_invitacion
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'finca_miembros' AND column_name = 'estado_invitacion') THEN
+    RAISE WARNING '❌ FALTA: finca_miembros.estado_invitacion';
+    missing_count := missing_count + 1;
+  END IF;
+
+  -- Check ciclos_productivos.cultivo_nombre
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ciclos_productivos' AND column_name = 'cultivo_nombre') THEN
+    RAISE WARNING '❌ FALTA: ciclos_productivos.cultivo_nombre';
+    missing_count := missing_count + 1;
+  END IF;
+
+  -- Check areas.cultivo_actual_nombre
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'areas' AND column_name = 'cultivo_actual_nombre') THEN
+    RAISE WARNING '❌ FALTA: areas.cultivo_actual_nombre';
+    missing_count := missing_count + 1;
+  END IF;
+
+  -- Check tareas.hora_inicio
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tareas' AND column_name = 'hora_inicio') THEN
+    RAISE WARNING '❌ FALTA: tareas.hora_inicio';
+    missing_count := missing_count + 1;
+  END IF;
+
+  -- Check cultivos_catalogo.rendimiento_referencia
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cultivos_catalogo' AND column_name = 'rendimiento_referencia') THEN
+    RAISE WARNING '❌ FALTA: cultivos_catalogo.rendimiento_referencia';
+    missing_count := missing_count + 1;
+  END IF;
+
+  IF missing_count = 0 THEN
+    RAISE NOTICE '✅ VERIFICACION: Todas las columnas críticas existen correctamente';
+  ELSE
+    RAISE WARNING '⚠️ VERIFICACION: %s columna(s) crítica(s) faltan - revisa los errores arriba', missing_count;
+  END IF;
+END $$;

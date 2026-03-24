@@ -40,6 +40,7 @@ const SyncEngine = (() => {
     'fincas', 'finca_miembros', 'areas', 'cultivos_catalogo',
     'ciclos_productivos', 'cosechas', 'ventas', 'costos', 'colmenas',
     'inspecciones_colmena', 'camas_lombricompost', 'registros_lombricompost',
+    'ai_conversations', 'ai_chat_history',
     'tareas', 'inspecciones', 'fotos_inspeccion', 'aplicaciones_fitosanitarias',
     'lotes_animales', 'registros_animales'
   ];
@@ -58,7 +59,7 @@ const SyncEngine = (() => {
 
   // Tables that should NEVER sync (local-only)
   const LOCAL_ONLY_TABLES = [
-    'usuarios', 'sync_queue', 'ai_chat_history',
+    'usuarios', 'sync_queue',
     'user_profiles_local', 'payment_history'
   ];
 
@@ -76,7 +77,7 @@ const SyncEngine = (() => {
     ciclos_productivos: ['id', 'finca_id', 'area_id', 'cultivo_id', 'cultivo_nombre', 'area_nombre', 'nombre', 'fecha_inicio', 'fecha_fin', 'fecha_fin_real', 'estado', 'notas', 'created_at', 'updated_at'],
     cosechas: ['id', 'finca_id', 'ciclo_id', 'cultivo_id', 'cultivo_nombre', 'area_id', 'fecha', 'cantidad', 'unidad', 'calidad', 'notas', 'created_at', 'updated_at'],
     ventas: ['id', 'finca_id', 'cultivo_id', 'cultivo_nombre', 'producto', 'fecha', 'cantidad', 'unidad', 'precio_unitario', 'total', 'comprador', 'notas', 'created_at', 'updated_at'],
-    costos: ['id', 'finca_id', 'cultivo_id', 'cultivo_nombre', 'ciclo_id', 'categoria', 'subcategoria', 'fecha', 'monto', 'descripcion', 'proveedor', 'notas', 'created_at', 'updated_at'],
+    costos: ['id', 'finca_id', 'cultivo_id', 'cultivo_nombre', 'ciclo_id', 'area_id', 'categoria', 'subcategoria', 'fecha', 'total', 'cantidad', 'unidad', 'costo_unitario', 'descripcion', 'proveedor', 'notas', 'created_at', 'updated_at'],
     colmenas: ['id', 'finca_id', 'nombre', 'tipo', 'estado', 'ubicacion', 'fecha_instalacion', 'notas', 'created_at', 'updated_at'],
     inspecciones_colmena: ['id', 'finca_id', 'colmena_id', 'fecha', 'tipo', 'estado_general', 'poblacion', 'reina_vista', 'crias', 'miel', 'plagas', 'notas', 'created_at', 'updated_at'],
     camas_lombricompost: ['id', 'finca_id', 'nombre', 'tipo', 'estado', 'ubicacion', 'fecha_inicio', 'notas', 'created_at', 'updated_at'],
@@ -86,7 +87,9 @@ const SyncEngine = (() => {
     fotos_inspeccion: ['id', 'finca_id', 'inspeccion_id', 'url', 'descripcion', 'tipo', 'created_at', 'updated_at'],
     aplicaciones_fitosanitarias: ['id', 'finca_id', 'area_id', 'ciclo_id', 'cultivo_nombre', 'destino', 'tipo_producto', 'nombre_producto', 'ingrediente_activo', 'fecha', 'producto', 'dosis', 'unidad_dosis', 'metodo', 'objetivo', 'periodo_carencia_dias', 'area_aplicada_m2', 'colmena_id', 'cama_id', 'notas', 'created_at', 'updated_at'],
     lotes_animales: ['id', 'finca_id', 'nombre', 'tipo_animal', 'cantidad', 'raza', 'area_id', 'notas', 'created_at', 'updated_at'],
-    registros_animales: ['id', 'finca_id', 'lote_id', 'tipo', 'fecha', 'descripcion', 'cantidad', 'costo', 'producto', 'notas', 'created_at', 'updated_at']
+    registros_animales: ['id', 'finca_id', 'lote_id', 'tipo', 'fecha', 'descripcion', 'cantidad', 'costo', 'producto', 'notas', 'created_at', 'updated_at'],
+    ai_conversations: ['id', 'finca_id', 'usuario_id', 'title', 'message_count', 'created_at', 'updated_at'],
+    ai_chat_history: ['id', 'conversation_id', 'finca_id', 'usuario_id', 'role', 'content', 'image', 'timestamp', 'created_at', 'updated_at']
   };
 
   // Tables that DON'T have finca_id column

@@ -62,7 +62,13 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
--- user_profiles RLS (idempotent - drop if exists then create)
+-- user_profiles RLS (idempotent - drop ALL old + new policy names then create)
+-- Old policy names that may still exist from previous schemas:
+DROP POLICY IF EXISTS "Users see own profile" ON user_profiles;
+DROP POLICY IF EXISTS "Admins see all profiles" ON user_profiles;
+DROP POLICY IF EXISTS "Users update own profile" ON user_profiles;
+DROP POLICY IF EXISTS "Admins update all profiles" ON user_profiles;
+DROP POLICY IF EXISTS "Insert own profile" ON user_profiles;
 DROP POLICY IF EXISTS "Users can view own profile" ON user_profiles;
 CREATE POLICY "Users can view own profile" ON user_profiles
   FOR SELECT USING (id = auth.uid());
@@ -93,7 +99,7 @@ CREATE TABLE fincas (
   latitud NUMERIC,
   longitud NUMERIC,
   propietario_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
-  modificado_por UUID,
+  modificado_por TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -241,10 +247,14 @@ CREATE TABLE costos (
   cultivo_id UUID,
   cultivo_nombre TEXT,
   ciclo_id UUID,
+  area_id UUID,
   categoria TEXT,
   subcategoria TEXT,
   fecha DATE,
-  monto NUMERIC DEFAULT 0,
+  total NUMERIC DEFAULT 0,
+  cantidad NUMERIC DEFAULT 1,
+  unidad TEXT,
+  costo_unitario NUMERIC DEFAULT 0,
   descripcion TEXT,
   proveedor TEXT,
   notas TEXT,
@@ -455,6 +465,37 @@ CREATE TABLE registros_animales (
 
 DO $$ BEGIN
   RAISE NOTICE 'Created: lotes_animales, registros_animales';
+END $$;
+
+-- ---- AI conversations & chat history ----
+DROP TABLE IF EXISTS ai_chat_history CASCADE;
+DROP TABLE IF EXISTS ai_conversations CASCADE;
+
+CREATE TABLE ai_conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID NOT NULL REFERENCES fincas ON DELETE CASCADE,
+  usuario_id UUID NOT NULL,
+  title TEXT DEFAULT 'Nuevo chat',
+  message_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE ai_chat_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID NOT NULL REFERENCES ai_conversations ON DELETE CASCADE,
+  finca_id UUID NOT NULL REFERENCES fincas ON DELETE CASCADE,
+  usuario_id UUID NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT,
+  image TEXT,
+  timestamp TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+DO $$ BEGIN
+  RAISE NOTICE 'Created: ai_conversations, ai_chat_history';
   RAISE NOTICE '=== All tables created successfully ===';
 END $$;
 
@@ -483,6 +524,8 @@ ALTER TABLE fotos_inspeccion ENABLE ROW LEVEL SECURITY;
 ALTER TABLE aplicaciones_fitosanitarias ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lotes_animales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE registros_animales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_chat_history ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- STEP 6: RLS POLICIES
@@ -630,6 +673,22 @@ CREATE POLICY "registros_animales_delete" ON registros_animales FOR DELETE USING
 
 DO $$ BEGIN
   RAISE NOTICE 'RLS policies: aplicaciones_fitosanitarias, lotes_animales, registros_animales';
+END $$;
+
+-- ---- ai_conversations (user owns their conversations) ----
+CREATE POLICY "ai_conv_select" ON ai_conversations FOR SELECT USING (usuario_id = auth.uid());
+CREATE POLICY "ai_conv_insert" ON ai_conversations FOR INSERT WITH CHECK (usuario_id = auth.uid());
+CREATE POLICY "ai_conv_update" ON ai_conversations FOR UPDATE USING (usuario_id = auth.uid());
+CREATE POLICY "ai_conv_delete" ON ai_conversations FOR DELETE USING (usuario_id = auth.uid());
+
+-- ---- ai_chat_history (user owns their messages) ----
+CREATE POLICY "ai_chat_select" ON ai_chat_history FOR SELECT USING (usuario_id = auth.uid());
+CREATE POLICY "ai_chat_insert" ON ai_chat_history FOR INSERT WITH CHECK (usuario_id = auth.uid());
+CREATE POLICY "ai_chat_update" ON ai_chat_history FOR UPDATE USING (usuario_id = auth.uid());
+CREATE POLICY "ai_chat_delete" ON ai_chat_history FOR DELETE USING (usuario_id = auth.uid());
+
+DO $$ BEGIN
+  RAISE NOTICE 'RLS policies: ai_conversations, ai_chat_history';
   RAISE NOTICE '=== All RLS policies created ===';
 END $$;
 

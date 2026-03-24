@@ -98,6 +98,29 @@ const DashboardModule = (() => {
       </div>
     `;
 
+    // ===== AI PROACTIVE SECTION (Premium only) =====
+    if (typeof PlanGuard !== 'undefined' && PlanGuard.isPaid()) {
+      html += `
+        <div class="card ai-tip-card" id="ai-tip-card">
+          <div class="card-header">
+            <h3>💡 Consejo del Día</h3>
+            <button class="btn btn-sm btn-outline" id="ai-tip-refresh" title="Nuevo consejo">🔄</button>
+          </div>
+          <div id="ai-tip-content" class="ai-tip-content">
+            <div class="ai-loading"><span class="ai-dot"></span><span class="ai-dot"></span><span class="ai-dot"></span> Pensando...</div>
+          </div>
+        </div>
+        <div class="card ai-reminders-card" id="ai-reminders-card">
+          <div class="card-header">
+            <h3>🔔 Alertas Inteligentes</h3>
+          </div>
+          <div id="ai-reminders-content">
+            <div class="ai-loading"><span class="ai-dot"></span><span class="ai-dot"></span><span class="ai-dot"></span> Analizando...</div>
+          </div>
+        </div>
+      `;
+    }
+
     // ===== OVERDUE TASKS ALERT =====
     const today = DateUtils.today();
     const tareasVencidas = tareas.filter(t => t.fecha_programada && t.fecha_programada < today);
@@ -308,6 +331,114 @@ const DashboardModule = (() => {
     // Cycle cross-links
     container.querySelectorAll('[data-goto-ciclo]').forEach(el => {
       el.addEventListener('click', () => App.navigateTo('produccion'));
+    });
+
+    // ===== AI PROACTIVE LOADING (async, non-blocking) =====
+    if (typeof PlanGuard !== 'undefined' && PlanGuard.isPaid() && typeof AIDataHelpers !== 'undefined') {
+      loadDailyTip(fincaId);
+      loadSmartReminders(fincaId);
+
+      document.getElementById('ai-tip-refresh')?.addEventListener('click', () => {
+        AICache.invalidate(`daily_tip_${fincaId}`);
+        loadDailyTip(fincaId);
+      });
+    }
+  }
+
+  // Load daily AI tip
+  async function loadDailyTip(fincaId) {
+    const tipEl = document.getElementById('ai-tip-content');
+    if (!tipEl) return;
+
+    const cached = AICache.get(`daily_tip_${fincaId}`);
+    if (cached) {
+      tipEl.innerHTML = `<p class="ai-tip-text">${cached}</p>`;
+      return;
+    }
+
+    try {
+      const context = await AIDataHelpers.getDailyTipContext(fincaId);
+      const result = await GeminiClient.dailyTip(context);
+      const tip = result.response || result.text || '';
+      if (tip) {
+        AICache.set(`daily_tip_${fincaId}`, tip, 720); // 12 hours
+        tipEl.innerHTML = `<p class="ai-tip-text">${tip}</p>`;
+      } else {
+        tipEl.innerHTML = '<p class="text-muted text-sm">No se pudo obtener el consejo.</p>';
+      }
+    } catch (err) {
+      tipEl.innerHTML = `<p class="text-muted text-sm">Error: ${err.message}</p>`;
+    }
+  }
+
+  // Load smart reminders
+  async function loadSmartReminders(fincaId) {
+    const remEl = document.getElementById('ai-reminders-content');
+    if (!remEl) return;
+
+    const cached = AICache.get(`reminders_${fincaId}`);
+    if (cached) {
+      renderReminders(remEl, cached);
+      return;
+    }
+
+    try {
+      const [issues, farm] = await Promise.all([
+        AIDataHelpers.getPendingIssues(fincaId),
+        AIDataHelpers.getFarmSummary(fincaId)
+      ]);
+      const result = await GeminiClient.smartReminders({ issues, farm });
+      let reminders = [];
+      try {
+        const text = result.response || result.text || '[]';
+        // Strip markdown code blocks if present
+        const clean = text.replace(/```json\s*/g, '').replace(/```/g, '').trim();
+        reminders = JSON.parse(clean);
+        if (!Array.isArray(reminders)) reminders = [];
+      } catch {
+        reminders = [];
+      }
+
+      if (reminders.length > 0) {
+        AICache.set(`reminders_${fincaId}`, reminders, 360); // 6 hours
+        renderReminders(remEl, reminders);
+      } else {
+        remEl.innerHTML = '<p class="text-sm text-muted">Todo parece en orden 👍</p>';
+      }
+    } catch (err) {
+      remEl.innerHTML = `<p class="text-muted text-sm">Error: ${err.message}</p>`;
+    }
+  }
+
+  function renderReminders(container, reminders) {
+    const actionMap = {
+      'crear_tarea': 'tareas',
+      'ir_inspecciones': 'inspecciones',
+      'ir_fitosanitario': 'fitosanitario',
+      'ir_produccion': 'produccion',
+      'ir_ventas': 'ventas',
+      'ir_costos': 'costos',
+      'ir_areas': 'fincas'
+    };
+    const priorityColors = { alta: 'red', media: 'amber', baja: 'blue' };
+
+    container.innerHTML = reminders.slice(0, 3).map(r => `
+      <div class="ai-reminder-item" data-action="${r.suggestedAction || ''}">
+        <div class="ai-reminder-icon">${r.icon || '📌'}</div>
+        <div class="ai-reminder-body">
+          <div class="ai-reminder-title">${r.title || ''}</div>
+          <div class="ai-reminder-desc">${r.description || ''}</div>
+        </div>
+        <span class="badge badge-${priorityColors[r.priority] || 'gray'}">${r.priority || ''}</span>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('.ai-reminder-item').forEach(el => {
+      const action = el.dataset.action;
+      if (action && actionMap[action]) {
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', () => App.navigateTo(actionMap[action]));
+      }
     });
   }
 

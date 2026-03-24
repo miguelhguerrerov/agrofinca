@@ -328,12 +328,31 @@ const AsistenteIAModule = (() => {
   function buildMessageHTML(msg) {
     const isUser = msg.role === 'user';
     const time = new Date(msg.timestamp).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+    // Parse actions from bot messages
+    let displayContent = msg.content;
+    let actions = [];
+    if (!isUser && msg.content) {
+      const parsed = parseActionsFromResponse(msg.content);
+      displayContent = parsed.cleanText;
+      actions = parsed.actions;
+    }
+    const actionsHTML = actions.length > 0 ? `
+      <div class="ia-actions" data-msg-id="${msg.id}">
+        ${actions.map((a, i) => `
+          <button class="ia-action-btn ${msg._actionsExecuted?.[i] ? 'executed' : ''}"
+                  data-action-index="${i}" data-msg-id="${msg.id}"
+                  ${msg._actionsExecuted?.[i] ? 'disabled' : ''}>
+            ${msg._actionsExecuted?.[i] ? '✓' : '✅'} ${getActionLabel(a)}
+          </button>
+        `).join('')}
+      </div>` : '';
     return `
       <div class="ia-msg ${isUser ? 'ia-msg-user' : 'ia-msg-bot'}">
         ${!isUser ? '<div class="ia-msg-avatar">🤖</div>' : ''}
         <div class="ia-msg-bubble">
           ${msg.image ? `<img src="${msg.image}" class="ia-msg-img" alt="Foto">` : ''}
-          <div class="ia-msg-text">${formatMarkdown(msg.content)}</div>
+          <div class="ia-msg-text">${formatMarkdown(displayContent)}</div>
+          ${actionsHTML}
           <span class="ia-msg-time">${time}</span>
         </div>
         ${isUser ? '<div class="ia-msg-avatar">👤</div>' : ''}
@@ -458,6 +477,9 @@ const AsistenteIAModule = (() => {
     // Rename / Delete
     document.getElementById('ia-rename-chat')?.addEventListener('click', handleRename);
     document.getElementById('ia-delete-chat')?.addEventListener('click', handleDelete);
+
+    // Action buttons (event delegation)
+    document.getElementById('ia-messages')?.addEventListener('click', handleActionClick);
   }
 
   async function handleRename() {
@@ -619,9 +641,167 @@ const AsistenteIAModule = (() => {
     }
   }
 
-  // ── Context builder ─────────────────────────
+  // ── Actionable Chat — Parse & Execute ───────
+  function parseActionsFromResponse(text) {
+    if (!text) return { cleanText: '', actions: [] };
+    const jsonRegex = /```json\s*([\s\S]*?)```/g;
+    let actions = [];
+    let cleanText = text;
+    let match;
+    while ((match = jsonRegex.exec(text)) !== null) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (parsed.actions && Array.isArray(parsed.actions)) {
+          actions = actions.concat(parsed.actions);
+        }
+      } catch { /* invalid JSON, skip */ }
+      cleanText = cleanText.replace(match[0], '');
+    }
+    return { cleanText: cleanText.trim(), actions };
+  }
+
+  const ACTION_MAP = {
+    create_tarea: { store: 'tareas', label: 'Crear tarea', icon: '📅' },
+    create_inspeccion: { store: 'inspecciones', label: 'Crear inspección', icon: '📋' },
+    create_aplicacion_fitosanitaria: { store: 'aplicaciones_fitosanitarias', label: 'Crear aplicación fitosanitaria', icon: '🧪' },
+    create_costo: { store: 'costos', label: 'Registrar costo', icon: '📉' }
+  };
+
+  function getActionLabel(action) {
+    const info = ACTION_MAP[action.type];
+    if (!info) return action.type;
+    const title = action.data?.titulo || action.data?.descripcion || action.data?.nombre_producto || '';
+    return `${info.icon} ${info.label}: ${title}`.substring(0, 80);
+  }
+
+  function handleActionClick(e) {
+    const btn = e.target.closest('.ia-action-btn');
+    if (!btn || btn.disabled) return;
+    const msgId = btn.dataset.msgId;
+    const actionIndex = parseInt(btn.dataset.actionIndex);
+    const msg = chatMessages.find(m => m.id === msgId);
+    if (!msg) return;
+    const parsed = parseActionsFromResponse(msg.content);
+    const action = parsed.actions[actionIndex];
+    if (!action) return;
+    showActionConfirmModal(action, btn, msg, actionIndex);
+  }
+
+  function showActionConfirmModal(action, btn, msg, actionIndex) {
+    const info = ACTION_MAP[action.type];
+    if (!info) { App.showToast('Acción no reconocida', 'error'); return; }
+    const data = action.data || {};
+    // Build editable fields
+    const fields = Object.entries(data).map(([key, val]) => `
+      <div class="form-group">
+        <label>${key.replace(/_/g, ' ')}</label>
+        <input class="form-input" name="action_${key}" value="${escapeHtml(String(val || ''))}" />
+      </div>
+    `).join('');
+
+    const modalBody = document.getElementById('modal-body');
+    const modalTitle = document.getElementById('modal-title');
+    const modalFooter = document.getElementById('modal-footer');
+    if (!modalBody || !modalTitle || !modalFooter) return;
+
+    modalTitle.textContent = `${info.icon} ${info.label}`;
+    modalBody.innerHTML = `
+      <p style="margin-bottom:0.75rem;color:var(--gray-700);font-size:0.88rem;">
+        La IA sugiere esta acción. Puedes editar los campos antes de confirmar.
+      </p>
+      <form id="ia-action-form">${fields}</form>`;
+    modalFooter.innerHTML = `
+      <button class="btn btn-outline" id="ia-action-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="ia-action-confirm">✅ Confirmar</button>`;
+
+    document.getElementById('modal-overlay').style.display = 'flex';
+
+    document.getElementById('ia-action-cancel').onclick = () => {
+      document.getElementById('modal-overlay').style.display = 'none';
+    };
+    document.getElementById('modal-close').onclick = () => {
+      document.getElementById('modal-overlay').style.display = 'none';
+    };
+    document.getElementById('ia-action-confirm').onclick = async () => {
+      // Collect edited field values
+      const form = document.getElementById('ia-action-form');
+      const editedData = {};
+      Object.keys(data).forEach(key => {
+        const input = form.querySelector(`[name="action_${key}"]`);
+        editedData[key] = input ? input.value : data[key];
+      });
+      await executeAction(info.store, editedData, btn, msg, actionIndex);
+      document.getElementById('modal-overlay').style.display = 'none';
+    };
+  }
+
+  async function executeAction(store, data, btn, msg, actionIndex) {
+    try {
+      const record = {
+        id: AgroDB.uuid(),
+        finca_id: currentFincaId,
+        usuario_id: AuthModule.getUserId(),
+        creado_por_ia: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ...data
+      };
+      // Set defaults per store
+      if (store === 'tareas') {
+        record.estado = record.estado || 'pendiente';
+        record.fecha_programada = record.fecha_programada || new Date().toISOString().slice(0, 10);
+      }
+      if (store === 'inspecciones') {
+        record.fecha = record.fecha || new Date().toISOString().slice(0, 10);
+      }
+      if (store === 'aplicaciones_fitosanitarias') {
+        record.fecha = record.fecha || new Date().toISOString().slice(0, 10);
+      }
+      if (store === 'costos') {
+        record.fecha = record.fecha || new Date().toISOString().slice(0, 10);
+        record.total = parseFloat(record.total) || 0;
+      }
+      await AgroDB.add(store, record);
+      // Mark action as executed
+      if (!msg._actionsExecuted) msg._actionsExecuted = {};
+      msg._actionsExecuted[actionIndex] = true;
+      btn.disabled = true;
+      btn.classList.add('executed');
+      btn.innerHTML = btn.innerHTML.replace('✅', '✓');
+      App.showToast(`${ACTION_MAP[Object.keys(ACTION_MAP).find(k => ACTION_MAP[k].store === store)]?.label || 'Registro'} creado exitosamente`, 'success');
+    } catch (err) {
+      console.error('[IA] Error executing action:', err);
+      App.showToast('Error al crear registro: ' + err.message, 'error');
+    }
+  }
+
+  // ── Context builder (enhanced with AIDataHelpers) ──
   async function buildContext(fincaId) {
     try {
+      // Use AIDataHelpers if available for richer context
+      if (typeof AIDataHelpers !== 'undefined') {
+        const [farm, issues, cropStats] = await Promise.all([
+          AIDataHelpers.getFarmSummary(fincaId),
+          AIDataHelpers.getPendingIssues(fincaId),
+          AIDataHelpers.getCropStats(fincaId)
+        ]);
+        return {
+          fincaNombre: farm.finca || '',
+          ubicacion: farm.ubicacion || '',
+          cultivos: farm.cultivos?.map(c => c.nombre) || [],
+          ciclosActivos: farm.ciclos_activos?.length || 0,
+          areas: farm.areas?.map(a => `${a.nombre} (${a.tipo}, ${a.cultivo || 'sin cultivo'})`) || [],
+          tareas_vencidas: issues.tareas_vencidas || 0,
+          dias_sin_inspeccion: issues.dias_sin_inspeccion || 0,
+          problemas_recientes: issues.problemas_recientes || [],
+          cosechas_proximas: issues.ciclos_proximos_cosecha || [],
+          cultivos_stats: cropStats?.slice(0, 5).map(c => ({
+            nombre: c.nombre, cosechas: c.cosechas_total,
+            margen: c.margen, problemas: c.problemas
+          })) || []
+        };
+      }
+      // Fallback
       const finca = await AgroDB.getById('fincas', fincaId);
       const ciclos = await AgroDB.getByIndex('ciclos_productivos', 'finca_id', fincaId);
       const activos = ciclos.filter(c => c.estado === 'activo');

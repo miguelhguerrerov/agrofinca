@@ -1,11 +1,12 @@
 // ============================================
-// AgroFinca - Gemini AI Client
+// AgroFinca - Gemini AI Client v2
 // Frontend client for Supabase Edge Function proxy
+// Now with proactive AI features
 // ============================================
 
 const GeminiClient = (() => {
 
-  // Chat with AI assistant
+  // Chat with AI assistant (now with actionable responses)
   async function chat(messages, context = {}) {
     return SupabaseClient.callEdgeFunction('gemini-proxy', {
       action: 'chat',
@@ -53,11 +54,41 @@ const GeminiClient = (() => {
     });
   }
 
+  // ── Proactive AI Features ──────────────────
+
+  // Daily tip based on farm data
+  async function dailyTip(farmSummary) {
+    return SupabaseClient.callEdgeFunction('gemini-proxy', {
+      action: 'daily-tip',
+      data: farmSummary
+    });
+  }
+
+  // Smart reminders based on patterns
+  async function smartReminders(farmData) {
+    return SupabaseClient.callEdgeFunction('gemini-proxy', {
+      action: 'smart-reminders',
+      data: farmData
+    });
+  }
+
+  // AI analysis (crop, area, or farm-wide)
+  async function analyzeData(type, data) {
+    return SupabaseClient.callEdgeFunction('gemini-proxy', {
+      action: 'analyze-data',
+      analysisType: type,
+      data
+    });
+  }
+
   return {
     chat,
     analyzeImage,
     transcribeAudio,
     phytosanitaryRecommendation,
-    farmOptimization
+    farmOptimization,
+    dailyTip,
+    smartReminders,
+    analyzeData
   };
 })();

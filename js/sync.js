@@ -1,9 +1,9 @@
 // ============================================
-// AgroFinca - Sync Engine (v3)
+// AgroFinca - Sync Engine (v4)
 // Bidirectional sync: IndexedDB <-> Supabase
 // Offline-first: IndexedDB is primary DB
-// Fixes v2: table-aware cleanRecord, cascade stop,
-// token refresh, getUpdatedSince fix for fincas
+// v4: retry limits, permanent fail detection,
+// backoff, better error categorization
 // ============================================
 
 const SyncEngine = (() => {
@@ -12,8 +12,30 @@ const SyncEngine = (() => {
   let onStatusChange = null;
   let lastSyncTimestamp = localStorage.getItem('agrofinca_last_sync') || null;
 
+  // Max retries before marking an item as permanently failed
+  const MAX_RETRIES = 5;
+
+  // Track retry counts per queue item (persisted in localStorage)
+  function getRetryCount(queueItemId) {
+    const retries = JSON.parse(localStorage.getItem('agrofinca_sync_retries') || '{}');
+    return retries[queueItemId] || 0;
+  }
+  function incrementRetry(queueItemId) {
+    const retries = JSON.parse(localStorage.getItem('agrofinca_sync_retries') || '{}');
+    retries[queueItemId] = (retries[queueItemId] || 0) + 1;
+    localStorage.setItem('agrofinca_sync_retries', JSON.stringify(retries));
+    return retries[queueItemId];
+  }
+  function clearRetry(queueItemId) {
+    const retries = JSON.parse(localStorage.getItem('agrofinca_sync_retries') || '{}');
+    delete retries[queueItemId];
+    localStorage.setItem('agrofinca_sync_retries', JSON.stringify(retries));
+  }
+  function clearAllRetries() {
+    localStorage.removeItem('agrofinca_sync_retries');
+  }
+
   // Tables that sync to Supabase (ordered by dependency - parents first)
-  // 'usuarios' is LOCAL ONLY - user data syncs via user_profiles in Supabase
   const SYNC_TABLES = [
     'fincas', 'finca_miembros', 'areas', 'cultivos_catalogo',
     'ciclos_productivos', 'cosechas', 'ventas', 'costos', 'colmenas',
@@ -24,47 +46,28 @@ const SyncEngine = (() => {
 
   // Push order: parent tables must be pushed before child tables (FK dependencies)
   const PUSH_ORDER = [
-    'fincas',                     // Level 0: no FK deps
-    'finca_miembros',             // Level 1: depends on fincas
-    'areas',                      // Level 1: depends on fincas
-    'cultivos_catalogo',          // Level 1: depends on fincas
-    'colmenas',                   // Level 1: depends on fincas
-    'camas_lombricompost',        // Level 1: depends on fincas
-    'lotes_animales',             // Level 1: depends on fincas
-    'ciclos_productivos',         // Level 2: depends on areas, cultivos_catalogo, fincas
-    'cosechas',                   // Level 3: depends on ciclos_productivos, fincas
-    'ventas',                     // Level 2: depends on fincas, cultivos
-    'costos',                     // Level 2: depends on fincas, cultivos, ciclos
-    'inspecciones_colmena',       // Level 2: depends on colmenas, fincas
-    'registros_lombricompost',    // Level 2: depends on camas_lombricompost, fincas
-    'tareas',                     // Level 1: depends on fincas
-    'inspecciones',               // Level 2: depends on fincas, areas, ciclos
-    'fotos_inspeccion',           // Level 3: depends on inspecciones
-    'aplicaciones_fitosanitarias',// Level 2: depends on fincas, areas, ciclos
-    'registros_animales'          // Level 2: depends on lotes_animales, fincas
+    'fincas',
+    'finca_miembros', 'areas', 'cultivos_catalogo', 'colmenas',
+    'camas_lombricompost', 'lotes_animales',
+    'ciclos_productivos',
+    'cosechas', 'ventas', 'costos',
+    'inspecciones_colmena', 'registros_lombricompost',
+    'tareas', 'inspecciones',
+    'fotos_inspeccion', 'aplicaciones_fitosanitarias', 'registros_animales'
   ];
 
   // Tables that should NEVER sync (local-only)
   const LOCAL_ONLY_TABLES = [
-    'usuarios',             // User data is in Supabase auth + user_profiles
-    'sync_queue',           // Internal sync mechanism
-    'ai_chat_history',      // Local AI chat
-    'user_profiles_local',  // Local cache of server profiles
-    'payment_history'       // Managed by Edge Functions
+    'usuarios', 'sync_queue', 'ai_chat_history',
+    'user_profiles_local', 'payment_history'
   ];
 
   // Fields to ALWAYS strip from ALL tables before pushing to Supabase
   const LOCAL_ONLY_FIELDS = [
-    'synced',           // Local sync flag
-    'password_hash',    // Local auth only
-    'avatar_iniciales', // Computed locally
-    'es_offline',       // Local flag
-    '_role'             // Computed field for UI
+    'synced', 'password_hash', 'avatar_iniciales', 'es_offline', '_role'
   ];
 
   // Known columns per Supabase table - ONLY these columns are sent
-  // Any field NOT in this list gets stripped before pushing
-  // This prevents PostgREST 400 errors from unknown columns
   const KNOWN_COLUMNS = {
     fincas: ['id', 'nombre', 'ubicacion', 'descripcion', 'area_total_m2', 'sistema_riego', 'latitud', 'longitud', 'propietario_id', 'modificado_por', 'created_at', 'updated_at'],
     finca_miembros: ['id', 'finca_id', 'usuario_id', 'usuario_email', 'rol', 'invitado_por', 'estado_invitacion', 'created_at', 'updated_at'],
@@ -86,7 +89,7 @@ const SyncEngine = (() => {
     registros_animales: ['id', 'finca_id', 'lote_id', 'tipo', 'fecha', 'descripcion', 'cantidad', 'costo', 'producto', 'notas', 'created_at', 'updated_at']
   };
 
-  // Tables that DON'T have finca_id column (used in pull to skip finca_id filter)
+  // Tables that DON'T have finca_id column
   const TABLES_WITHOUT_FINCA_ID = ['fincas'];
 
   function setStatusCallback(callback) {
@@ -104,18 +107,15 @@ const SyncEngine = (() => {
   // Start periodic sync
   function startAutoSync(intervalMs = 30000) {
     stopAutoSync();
-    // Initial sync - only if online and has session
     if (isOnline() && SupabaseClient.hasSession()) {
       setTimeout(() => syncAll(), 2000);
     }
-    // Periodic
     syncInterval = setInterval(() => {
       if (isOnline() && SupabaseClient.hasSession()) {
         syncAll();
       }
     }, intervalMs);
 
-    // Listen for online/offline events
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
   }
@@ -154,7 +154,7 @@ const SyncEngine = (() => {
         console.warn('[Sync] Token refresh failed:', e.message);
       }
 
-      // 1. Fix orphaned records (propietario_id mismatch with auth.uid)
+      // 1. Fix orphaned records
       await fixOrphanedRecords();
 
       // 2. Push local changes to Supabase
@@ -183,46 +183,56 @@ const SyncEngine = (() => {
     }
   }
 
-  // Clean a record by removing local-only fields AND unknown columns for the table
+  // Clean a record: remove local-only fields + unknown columns
   function cleanRecord(table, record) {
     const clean = { ...record };
 
-    // 1. Always remove global local-only fields
     for (const field of LOCAL_ONLY_FIELDS) {
       delete clean[field];
     }
 
-    // 2. If we know the columns for this table, strip anything not in the list
     const knownCols = KNOWN_COLUMNS[table];
     if (knownCols) {
       for (const key of Object.keys(clean)) {
         if (!knownCols.includes(key)) {
-          // Don't log for common local fields to reduce noise
-          if (!LOCAL_ONLY_FIELDS.includes(key)) {
-            console.debug(`[Sync] Stripping unknown field "${key}" from ${table}`);
-          }
           delete clean[key];
         }
+      }
+    }
+
+    // Remove undefined/null values for cleaner payload (except id)
+    for (const key of Object.keys(clean)) {
+      if (key !== 'id' && clean[key] === undefined) {
+        delete clean[key];
       }
     }
 
     return clean;
   }
 
-  // Check if a table is local-only (should not sync)
   function isLocalOnly(tableName) {
     return LOCAL_ONLY_TABLES.includes(tableName);
   }
 
-  // Fix records created with a local/offline user ID that don't match auth.uid()
+  // Categorize HTTP errors: permanent (4xx) vs transient (5xx/network)
+  function isPermanentError(errorMessage) {
+    if (!errorMessage) return false;
+    const msg = String(errorMessage).toLowerCase();
+    // 400 Bad Request with schema issues = permanent until schema changes
+    if (msg.includes('http 400') || msg.includes('pgrst204') || msg.includes('could not find')) return true;
+    // 404 table not found = permanent
+    if (msg.includes('not found') && msg.includes('404')) return true;
+    // 409 conflict handled by patchRecord fallback, not permanent
+    return false;
+  }
+
+  // Fix records created with wrong user ID
   async function fixOrphanedRecords() {
     try {
       const authUser = await SupabaseClient.getUser();
       if (!authUser || !authUser.id) return;
-
       const authUid = authUser.id;
 
-      // Fix fincas with mismatched propietario_id (check ALL fincas, not just unsynced)
       const allFincas = await AgroDB.getAll('fincas');
       for (const finca of allFincas) {
         if (finca.propietario_id && finca.propietario_id !== authUid) {
@@ -231,7 +241,6 @@ const SyncEngine = (() => {
         }
       }
 
-      // Fix finca_miembros with mismatched usuario_id
       const allMembers = await AgroDB.getAll('finca_miembros');
       for (const member of allMembers) {
         if (member.usuario_id && member.usuario_id !== authUid && !member.synced) {
@@ -250,20 +259,18 @@ const SyncEngine = (() => {
 
     let processed = 0;
     let errors = 0;
+    let skippedPermanent = 0;
 
-    // Track which finca_ids have been successfully pushed
-    // If a finca push fails, we skip ALL its child records
     const failedFincaIds = new Set();
-    const succeededFincaIds = new Set();
 
-    // Group queue items by table for ordered pushing
+    // Group by table
     const byTable = {};
     for (const item of queue) {
       if (!byTable[item.store_name]) byTable[item.store_name] = [];
       byTable[item.store_name].push(item);
     }
 
-    // Process tables in push order (parent tables first)
+    // Process in dependency order
     const orderedTables = [...PUSH_ORDER];
     for (const table of Object.keys(byTable)) {
       if (!orderedTables.includes(table)) orderedTables.push(table);
@@ -273,13 +280,22 @@ const SyncEngine = (() => {
       const items = byTable[table];
       if (!items || items.length === 0) continue;
 
-      // Skip local-only tables entirely
+      // Skip local-only tables
       if (isLocalOnly(table)) {
         for (const item of items) {
           await AgroDB.clearSyncQueueItem(item.id);
+          clearRetry(item.id);
         }
-        console.log(`[Sync] Skipped local-only table: ${table} (${items.length} items cleared)`);
         processed += items.length;
+        continue;
+      }
+
+      // Check if any item in this table already hit max retries
+      // If ALL items for a table are permanently failing, log once and skip
+      const allMaxed = items.every(item => getRetryCount(item.id) >= MAX_RETRIES);
+      if (allMaxed) {
+        console.warn(`[Sync] ⏭️ Skipping ${table} (${items.length} items) - all exceeded ${MAX_RETRIES} retries`);
+        skippedPermanent += items.length;
         continue;
       }
 
@@ -287,74 +303,104 @@ const SyncEngine = (() => {
 
       for (const item of items) {
         try {
+          // Check retry limit
+          const retries = getRetryCount(item.id);
+          if (retries >= MAX_RETRIES) {
+            skippedPermanent++;
+            continue;
+          }
+
           if (item.action === 'upsert') {
             const record = await AgroDB.getById(item.store_name, item.record_id);
             if (!record) {
-              // Record was deleted locally, remove from queue
               await AgroDB.clearSyncQueueItem(item.id);
+              clearRetry(item.id);
               processed++;
               continue;
             }
 
-            // CASCADE CHECK: If this is a child table, check if parent finca succeeded
-            if (table !== 'fincas' && record.finca_id) {
-              if (failedFincaIds.has(record.finca_id)) {
-                console.warn(`[Sync] Skipping ${table}/${item.record_id} - parent finca ${record.finca_id} failed`);
-                errors++;
-                continue; // Don't clear from queue - will retry next cycle
-              }
+            // CASCADE CHECK
+            if (table !== 'fincas' && record.finca_id && failedFincaIds.has(record.finca_id)) {
+              errors++;
+              continue;
             }
 
-            // Remove local-only fields AND unknown columns before sending
             const clean = cleanRecord(table, record);
             const result = await SupabaseClient.upsert(table, clean);
 
             if (result) {
               await AgroDB.markSynced(item.store_name, item.record_id);
               await AgroDB.clearSyncQueueItem(item.id);
+              clearRetry(item.id);
               processed++;
 
-              // Track finca success for cascade
               if (table === 'fincas') {
-                succeededFincaIds.add(record.id);
+                // Track success - no cascade block needed
               }
             } else {
+              // upsert returned null = server rejected
+              const newRetries = incrementRetry(item.id);
               errors++;
-              // Track finca failure for cascade
+
               if (table === 'fincas') {
                 failedFincaIds.add(record.id);
-                console.error(`[Sync] ❌ FINCA PUSH FAILED for "${record.nombre}" (${record.id}) - all child records will be skipped`);
+                console.error(`[Sync] ❌ FINCA PUSH FAILED for "${record.nombre}" (${record.id}) - retry ${newRetries}/${MAX_RETRIES}`);
               } else {
-                console.warn(`[Sync] Upsert returned null for ${table}/${item.record_id}`);
+                console.warn(`[Sync] Upsert null for ${table}/${item.record_id} - retry ${newRetries}/${MAX_RETRIES}`);
+              }
+
+              // If max retries reached, clear from queue to stop infinite loop
+              if (newRetries >= MAX_RETRIES) {
+                console.error(`[Sync] 🛑 PERMANENTLY FAILED: ${table}/${item.record_id} after ${MAX_RETRIES} retries - removing from queue`);
+                await AgroDB.clearSyncQueueItem(item.id);
+                clearRetry(item.id);
               }
             }
           } else if (item.action === 'delete') {
             const result = await SupabaseClient.deleteRecord(item.store_name, item.record_id);
             if (result) {
               await AgroDB.clearSyncQueueItem(item.id);
+              clearRetry(item.id);
               processed++;
             } else {
+              const newRetries = incrementRetry(item.id);
               errors++;
+              if (newRetries >= MAX_RETRIES) {
+                await AgroDB.clearSyncQueueItem(item.id);
+                clearRetry(item.id);
+              }
             }
           }
         } catch (err) {
+          const errMsg = err.message || String(err);
+          const newRetries = incrementRetry(item.id);
           errors++;
-          console.error(`[Sync] Push error for ${table}/${item.record_id}:`, err.message || err);
+          console.error(`[Sync] Push error ${table}/${item.record_id} (retry ${newRetries}/${MAX_RETRIES}):`, errMsg);
+
           if (table === 'fincas') {
-            // Extract finca id from the queue item
             try {
               const rec = await AgroDB.getById('fincas', item.record_id);
               if (rec) failedFincaIds.add(rec.id);
             } catch (_) {}
+          }
+
+          // Permanent errors: clear immediately
+          if (isPermanentError(errMsg) || newRetries >= MAX_RETRIES) {
+            console.error(`[Sync] 🛑 Removing permanently failed item: ${table}/${item.record_id}`);
+            await AgroDB.clearSyncQueueItem(item.id);
+            clearRetry(item.id);
           }
         }
       }
     }
 
     if (failedFincaIds.size > 0) {
-      console.warn(`[Sync] ⚠️ ${failedFincaIds.size} finca(s) failed to push. Their child records were skipped.`);
+      console.warn(`[Sync] ⚠️ ${failedFincaIds.size} finca(s) failed. Child records skipped.`);
     }
-    console.log(`[Sync] Push complete: ${processed} processed, ${errors} errors`);
+    if (skippedPermanent > 0) {
+      console.warn(`[Sync] ⏭️ ${skippedPermanent} items skipped (max retries exceeded)`);
+    }
+    console.log(`[Sync] Push complete: ${processed} ok, ${errors} errors, ${skippedPermanent} skipped`);
     return processed;
   }
 
@@ -365,7 +411,6 @@ const SyncEngine = (() => {
 
     for (const table of SYNC_TABLES) {
       try {
-        // For fincas table, don't pass fincaId filter (fincas doesn't have finca_id column)
         const useFilter = TABLES_WITHOUT_FINCA_ID.includes(table) ? null : fincaId;
         const remoteRecords = await SupabaseClient.getUpdatedSince(table, since, useFilter);
 
@@ -376,13 +421,10 @@ const SyncEngine = (() => {
         for (const remote of remoteRecords) {
           const local = await AgroDB.getById(table, remote.id);
           if (!local) {
-            // New remote record - add locally without triggering sync queue
             await directPut(table, { ...remote, synced: true });
           } else if (new Date(remote.updated_at) > new Date(local.updated_at)) {
-            // Remote is newer - update locally (last-write-wins)
             await directPut(table, { ...remote, synced: true });
           }
-          // If local is newer, it will be pushed in next pushChanges
         }
       } catch (err) {
         console.warn(`[Sync] Pull error for ${table}:`, err.message || err);
@@ -396,7 +438,6 @@ const SyncEngine = (() => {
       const request = indexedDB.open('agrofinca_db');
       request.onsuccess = (e) => {
         const database = e.target.result;
-        // Check if the object store exists before writing
         if (!database.objectStoreNames.contains(storeName)) {
           console.warn(`[Sync] Object store "${storeName}" not found in IndexedDB, skipping`);
           database.close();
@@ -413,11 +454,27 @@ const SyncEngine = (() => {
     });
   }
 
-  // Force full sync
+  // Force full sync (resets timestamp + clears retry counters)
   async function forceSync() {
     lastSyncTimestamp = null;
     localStorage.removeItem('agrofinca_last_sync');
+    clearAllRetries();
     return syncAll();
+  }
+
+  // Clear all permanently failed items from queue
+  async function clearFailedItems() {
+    const queue = await AgroDB.getSyncQueue();
+    let cleared = 0;
+    for (const item of queue) {
+      if (getRetryCount(item.id) >= MAX_RETRIES) {
+        await AgroDB.clearSyncQueueItem(item.id);
+        clearRetry(item.id);
+        cleared++;
+      }
+    }
+    console.log(`[Sync] Cleared ${cleared} permanently failed items`);
+    return cleared;
   }
 
   // Get sync status info
@@ -437,6 +494,7 @@ const SyncEngine = (() => {
     stopAutoSync,
     syncAll,
     forceSync,
+    clearFailedItems,
     getStatus,
     isOnline,
     SYNC_TABLES

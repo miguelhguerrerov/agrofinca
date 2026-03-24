@@ -262,6 +262,9 @@ const App = (() => {
       module.render(document.getElementById('main-content'), currentFincaId);
     }
 
+    // Update FAB state based on current data
+    updateFABState();
+
     // Scroll to top
     window.scrollTo(0, 0);
   }
@@ -300,12 +303,23 @@ const App = (() => {
     });
   }
 
-  function handleQuickAction(action) {
+  async function handleQuickAction(action) {
     if (!currentFincaId) {
       showToast('Primero selecciona una finca', 'warning');
       navigateTo('fincas');
       return;
     }
+
+    // Check prerequisites for actions that need data
+    if (action === 'cosecha') {
+      const ciclos = await AgroDB.query('ciclos_productivos', r => r.finca_id === currentFincaId && r.estado === 'activo');
+      if (ciclos.length === 0) {
+        showToast('Primero crea un ciclo productivo para registrar cosechas', 'warning');
+        navigateTo('produccion');
+        return;
+      }
+    }
+
     switch (action) {
       case 'cosecha': ProduccionModule.showQuickHarvest(currentFincaId); break;
       case 'venta': VentasModule.showQuickSale(currentFincaId); break;
@@ -313,6 +327,41 @@ const App = (() => {
       case 'inspeccion': InspeccionesModule.showQuickInspection(currentFincaId); break;
       case 'fitosanitario': FitosanitarioModule.showQuickApplication(currentFincaId); break;
       case 'tarea': TareasModule.showQuickTask(currentFincaId); break;
+    }
+  }
+
+  // Update FAB quick actions based on available data
+  async function updateFABState() {
+    if (!currentFincaId) return;
+    try {
+      const ciclos = await AgroDB.query('ciclos_productivos', r => r.finca_id === currentFincaId && r.estado === 'activo');
+      const areas = await AgroDB.getByIndex('areas', 'finca_id', currentFincaId);
+
+      // Disable cosecha button if no active cycles
+      const cosechaBtn = document.querySelector('.action-item[data-quick="cosecha"]');
+      if (cosechaBtn) {
+        if (ciclos.length === 0) {
+          cosechaBtn.classList.add('disabled');
+          cosechaBtn.title = 'Necesitas un ciclo productivo activo';
+        } else {
+          cosechaBtn.classList.remove('disabled');
+          cosechaBtn.title = '';
+        }
+      }
+
+      // Disable inspeccion if no areas
+      const inspBtn = document.querySelector('.action-item[data-quick="inspeccion"]');
+      if (inspBtn) {
+        if (areas.length === 0) {
+          inspBtn.classList.add('disabled');
+          inspBtn.title = 'Necesitas áreas definidas';
+        } else {
+          inspBtn.classList.remove('disabled');
+          inspBtn.title = '';
+        }
+      }
+    } catch (e) {
+      // Non-critical, just leave FAB enabled
     }
   }
 

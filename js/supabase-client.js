@@ -188,10 +188,20 @@ const SupabaseClient = (() => {
         headers: getHeaders(),
         body: JSON.stringify(record)
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.warn(`[Supabase] Patch ${table} failed (${res.status})`);
+        return null;
+      }
       const data = await res.json();
-      return data[0] || record;
-    } catch {
+      // IMPORTANT: If no rows matched (empty array), the record was NOT updated
+      // Return null so the caller knows it didn't actually sync
+      if (!data || data.length === 0) {
+        console.warn(`[Supabase] Patch ${table}/${record.id}: no rows matched (record not in Supabase)`);
+        return null;
+      }
+      return data[0];
+    } catch (err) {
+      console.warn(`[Supabase] Patch ${table} error:`, err.message);
       return null;
     }
   }

@@ -1,5 +1,5 @@
 // AgroFinca Service Worker - Offline-First PWA
-const CACHE_NAME = 'agrofinca-v7';
+const CACHE_NAME = 'agrofinca-v8';
 
 // Use relative paths - resolved at install time via self.registration.scope
 const STATIC_FILES = [

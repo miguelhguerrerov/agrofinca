@@ -796,6 +796,61 @@ END $$;
 
 
 -- ============================================
+-- 22c. FIX FK CONSTRAINTS (v2.3)
+-- fincas.propietario_id must reference auth.users, NOT the local usuarios table
+-- finca_miembros.usuario_id must reference auth.users, NOT usuarios
+-- ============================================
+
+DO $$
+DECLARE
+  fk_table TEXT;
+BEGIN
+  RAISE NOTICE '🔄 Verificando FK constraints en fincas y finca_miembros...';
+
+  -- Check if fincas_propietario_id_fkey references the wrong table
+  SELECT ccu.table_name INTO fk_table
+  FROM information_schema.table_constraints tc
+  JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+  WHERE tc.table_name = 'fincas'
+  AND tc.constraint_name = 'fincas_propietario_id_fkey'
+  AND tc.constraint_type = 'FOREIGN KEY';
+
+  IF fk_table IS NOT NULL AND fk_table = 'usuarios' THEN
+    RAISE NOTICE '⚠️ fincas.propietario_id apunta a "usuarios" (incorrecto) - corrigiendo a auth.users...';
+    ALTER TABLE fincas DROP CONSTRAINT fincas_propietario_id_fkey;
+    ALTER TABLE fincas ADD CONSTRAINT fincas_propietario_id_fkey FOREIGN KEY (propietario_id) REFERENCES auth.users(id);
+    RAISE NOTICE '✅ fincas.propietario_id ahora apunta a auth.users';
+  ELSIF fk_table IS NOT NULL THEN
+    RAISE NOTICE '✅ fincas.propietario_id ya apunta a "%", no se necesita cambio', fk_table;
+  ELSE
+    -- No FK constraint exists, create it
+    ALTER TABLE fincas ADD CONSTRAINT fincas_propietario_id_fkey FOREIGN KEY (propietario_id) REFERENCES auth.users(id);
+    RAISE NOTICE '✅ fincas.propietario_id: FK creado apuntando a auth.users';
+  END IF;
+
+  -- Check finca_miembros.usuario_id FK
+  SELECT ccu.table_name INTO fk_table
+  FROM information_schema.table_constraints tc
+  JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+  WHERE tc.table_name = 'finca_miembros'
+  AND tc.constraint_name = 'finca_miembros_usuario_id_fkey'
+  AND tc.constraint_type = 'FOREIGN KEY';
+
+  IF fk_table IS NOT NULL AND fk_table = 'usuarios' THEN
+    RAISE NOTICE '⚠️ finca_miembros.usuario_id apunta a "usuarios" (incorrecto) - corrigiendo a auth.users...';
+    ALTER TABLE finca_miembros DROP CONSTRAINT finca_miembros_usuario_id_fkey;
+    ALTER TABLE finca_miembros ADD CONSTRAINT finca_miembros_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES auth.users(id);
+    RAISE NOTICE '✅ finca_miembros.usuario_id ahora apunta a auth.users';
+  ELSIF fk_table IS NOT NULL THEN
+    RAISE NOTICE '✅ finca_miembros.usuario_id ya apunta a "%", no se necesita cambio', fk_table;
+  ELSE
+    ALTER TABLE finca_miembros ADD CONSTRAINT finca_miembros_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES auth.users(id);
+    RAISE NOTICE '✅ finca_miembros.usuario_id: FK creado apuntando a auth.users';
+  END IF;
+END $$;
+
+
+-- ============================================
 -- 23. VERIFY: Check all tables and new columns exist
 -- ============================================
 

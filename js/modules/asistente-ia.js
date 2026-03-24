@@ -660,18 +660,194 @@ const AsistenteIAModule = (() => {
     return { cleanText: cleanText.trim(), actions };
   }
 
+  // ── Action types with full field schemas ────
   const ACTION_MAP = {
     create_tarea: { store: 'tareas', label: 'Crear tarea', icon: '📅' },
     create_inspeccion: { store: 'inspecciones', label: 'Crear inspección', icon: '📋' },
     create_aplicacion_fitosanitaria: { store: 'aplicaciones_fitosanitarias', label: 'Crear aplicación fitosanitaria', icon: '🧪' },
-    create_costo: { store: 'costos', label: 'Registrar costo', icon: '📉' }
+    create_costo: { store: 'costos', label: 'Registrar costo', icon: '💰' },
+    create_cosecha: { store: 'cosechas', label: 'Registrar cosecha', icon: '🌾' },
+    create_ciclo: { store: 'ciclos_productivos', label: 'Crear ciclo productivo', icon: '🔄' },
+    create_venta: { store: 'ventas', label: 'Registrar venta', icon: '🛒' }
   };
+
+  // Full field schemas per action type — mirrors the real forms
+  const FIELD_SCHEMAS = {
+    create_tarea: [
+      { key: 'titulo', label: 'Título', type: 'text', required: true },
+      { key: 'descripcion', label: 'Descripción', type: 'textarea' },
+      { key: 'fecha_programada', label: 'Fecha programada', type: 'date', required: true },
+      { key: 'hora_inicio', label: 'Hora de inicio', type: 'time' },
+      { key: 'duracion_minutos', label: 'Duración', type: 'select', options: [
+        { value: '', label: '-- Sin definir --' },
+        { value: '15', label: '15 minutos' }, { value: '30', label: '30 minutos' },
+        { value: '60', label: '1 hora' }, { value: '120', label: '2 horas' },
+        { value: '180', label: '3 horas' }, { value: '240', label: '4 horas' },
+        { value: '480', label: 'Todo el día' }
+      ]},
+      { key: 'prioridad', label: 'Prioridad', type: 'select', options: [
+        { value: 'baja', label: 'Baja' }, { value: 'media', label: 'Media' }, { value: 'alta', label: 'Alta' }
+      ]},
+      { key: 'area_id', label: 'Área / Lote', type: 'dynamic_select', source: 'areas' },
+      { key: 'cultivo_id', label: 'Cultivo', type: 'dynamic_select', source: 'cultivos' },
+      { key: 'ciclo_id', label: 'Ciclo productivo', type: 'dynamic_select', source: 'ciclos' },
+      { key: 'recurrente', label: 'Tarea recurrente', type: 'checkbox' },
+      { key: 'frecuencia_dias', label: 'Repetir cada', type: 'select', showIf: 'recurrente', options: [
+        { value: '1', label: 'Diario' }, { value: '3', label: 'Cada 3 días' },
+        { value: '7', label: 'Semanal' }, { value: '14', label: 'Quincenal' },
+        { value: '28', label: 'Mensual' }
+      ]}
+    ],
+    create_inspeccion: [
+      { key: 'titulo', label: 'Título / Motivo', type: 'text', required: true },
+      { key: 'fecha', label: 'Fecha', type: 'date', required: true },
+      { key: 'estado_general', label: 'Estado general', type: 'select', options: [
+        { value: 'bueno', label: '🟢 Bueno' }, { value: 'regular', label: '🟡 Regular' }, { value: 'malo', label: '🔴 Malo' }
+      ]},
+      { key: 'area_id', label: 'Área / Lote', type: 'dynamic_select', source: 'areas' },
+      { key: 'ciclo_id', label: 'Ciclo productivo', type: 'dynamic_select', source: 'ciclos' },
+      { key: 'estado_follaje', label: 'Estado del follaje', type: 'select', options: [
+        { value: '', label: '-- Sin evaluar --' },
+        { value: 'saludable', label: 'Saludable' }, { value: 'amarillento', label: 'Amarillento' },
+        { value: 'necrotico', label: 'Necrótico' }, { value: 'marchito', label: 'Marchito' },
+        { value: 'defoliado', label: 'Defoliado' }
+      ]},
+      { key: 'estado_riego', label: 'Estado del riego', type: 'select', options: [
+        { value: '', label: '-- Sin evaluar --' },
+        { value: 'optimo', label: 'Óptimo' }, { value: 'insuficiente', label: 'Insuficiente' },
+        { value: 'excesivo', label: 'Excesivo' }, { value: 'sin_riego', label: 'Sin riego' }
+      ]},
+      { key: 'estado_suelo', label: 'Estado del suelo', type: 'select', options: [
+        { value: '', label: '-- Sin evaluar --' },
+        { value: 'esponjoso', label: 'Esponjoso' }, { value: 'compactado', label: 'Compactado' },
+        { value: 'humedo', label: 'Húmedo' }, { value: 'seco', label: 'Seco' },
+        { value: 'erosionado', label: 'Erosionado' }
+      ]},
+      { key: 'plagas_detectadas', label: 'Plagas detectadas', type: 'text' },
+      { key: 'enfermedades_detectadas', label: 'Enfermedades detectadas', type: 'text' },
+      { key: 'etapa_fenologica', label: 'Etapa fenológica', type: 'text' },
+      { key: 'observaciones', label: 'Observaciones detalladas', type: 'textarea', required: true }
+    ],
+    create_aplicacion_fitosanitaria: [
+      { key: 'producto', label: 'Producto aplicado', type: 'text', required: true },
+      { key: 'tipo', label: 'Tipo', type: 'select', options: [
+        { value: 'fungicida', label: 'Fungicida' }, { value: 'insecticida', label: 'Insecticida' },
+        { value: 'herbicida', label: 'Herbicida' }, { value: 'fertilizante', label: 'Fertilizante' },
+        { value: 'biocontrol', label: 'Biocontrol' }, { value: 'otro', label: 'Otro' }
+      ]},
+      { key: 'fecha', label: 'Fecha de aplicación', type: 'date', required: true },
+      { key: 'area_id', label: 'Área / Lote', type: 'dynamic_select', source: 'areas' },
+      { key: 'ciclo_id', label: 'Ciclo productivo', type: 'dynamic_select', source: 'ciclos' },
+      { key: 'dosis', label: 'Dosis', type: 'text' },
+      { key: 'metodo_aplicacion', label: 'Método de aplicación', type: 'select', options: [
+        { value: '', label: '-- Seleccionar --' },
+        { value: 'aspersion', label: 'Aspersión' }, { value: 'drench', label: 'Drench' },
+        { value: 'granulado', label: 'Granulado' }, { value: 'inyeccion', label: 'Inyección' },
+        { value: 'manual', label: 'Manual' }
+      ]},
+      { key: 'motivo', label: 'Motivo de aplicación', type: 'textarea' },
+      { key: 'notas', label: 'Notas adicionales', type: 'textarea' }
+    ],
+    create_costo: [
+      { key: 'categoria', label: 'Categoría', type: 'select', required: true, options: [
+        { value: 'insumo', label: 'Insumo' }, { value: 'mano_obra_contratada', label: 'Mano de obra contratada' },
+        { value: 'mano_obra_familiar', label: 'Mano de obra familiar' }, { value: 'herramienta', label: 'Herramienta' },
+        { value: 'infraestructura', label: 'Infraestructura' }, { value: 'transporte', label: 'Transporte' },
+        { value: 'fitosanitario', label: 'Fitosanitario' }, { value: 'riego', label: 'Riego' },
+        { value: 'empaque', label: 'Empaque' }, { value: 'otro', label: 'Otro' }
+      ]},
+      { key: 'descripcion', label: 'Descripción', type: 'text', required: true },
+      { key: 'fecha', label: 'Fecha', type: 'date', required: true },
+      { key: 'cantidad', label: 'Cantidad', type: 'number', step: '0.1', defaultValue: '1' },
+      { key: 'unidad', label: 'Unidad', type: 'select', options: [
+        { value: 'unidad', label: 'Unidad' }, { value: 'jornal', label: 'Jornal' },
+        { value: 'hora', label: 'Hora' }, { value: 'kg', label: 'Kg' },
+        { value: 'litro', label: 'Litro' }, { value: 'saco', label: 'Saco' },
+        { value: 'global', label: 'Global' }
+      ]},
+      { key: 'costo_unitario', label: 'Costo unitario ($)', type: 'number', step: '0.01', required: true },
+      { key: 'total', label: 'Total ($)', type: 'number', step: '0.01', readonly: true, computed: 'cantidad * costo_unitario' },
+      { key: 'area_id', label: 'Área / Lote', type: 'dynamic_select', source: 'areas' },
+      { key: 'cultivo_id', label: 'Cultivo', type: 'dynamic_select', source: 'cultivos' },
+      { key: 'ciclo_id', label: 'Ciclo productivo', type: 'dynamic_select', source: 'ciclos' },
+      { key: 'notas', label: 'Notas', type: 'textarea' }
+    ],
+    create_cosecha: [
+      { key: 'ciclo_id', label: 'Ciclo productivo', type: 'dynamic_select', source: 'ciclos', required: true },
+      { key: 'fecha', label: 'Fecha de cosecha', type: 'date', required: true },
+      { key: 'cantidad', label: 'Cantidad', type: 'number', step: '0.1', required: true },
+      { key: 'unidad', label: 'Unidad', type: 'select', options: [
+        { value: 'kg', label: 'Kilogramos' }, { value: 'racimos', label: 'Racimos' },
+        { value: 'litros', label: 'Litros' }, { value: 'unidades', label: 'Unidades' },
+        { value: 'atados', label: 'Atados' }, { value: 'sacos', label: 'Sacos' },
+        { value: 'quintales', label: 'Quintales' }, { value: 'libras', label: 'Libras' }
+      ]},
+      { key: 'calidad', label: 'Calidad', type: 'select', options: [
+        { value: 'A', label: 'A - Premium' }, { value: 'B', label: 'B - Estándar' }, { value: 'C', label: 'C - Segunda' }
+      ]},
+      { key: 'notas', label: 'Observaciones', type: 'textarea' }
+    ],
+    create_ciclo: [
+      { key: 'cultivo_id', label: 'Cultivo', type: 'dynamic_select', source: 'cultivos', required: true },
+      { key: 'area_id', label: 'Área / Lote', type: 'dynamic_select', source: 'areas' },
+      { key: 'fecha_inicio', label: 'Fecha de inicio', type: 'date', required: true },
+      { key: 'fecha_fin_estimada', label: 'Fecha fin estimada', type: 'date' },
+      { key: 'cantidad_plantas', label: 'Cantidad de plantas', type: 'number' },
+      { key: 'estado', label: 'Estado', type: 'select', options: [
+        { value: 'activo', label: 'Activo' }, { value: 'completado', label: 'Completado' }, { value: 'cancelado', label: 'Cancelado' }
+      ]},
+      { key: 'notas', label: 'Notas', type: 'textarea' }
+    ],
+    create_venta: [
+      { key: 'fecha', label: 'Fecha de venta', type: 'date', required: true },
+      { key: 'cultivo_id', label: 'Producto (cultivo)', type: 'dynamic_select', source: 'cultivos' },
+      { key: 'producto', label: 'Producto (si no es cultivo)', type: 'text' },
+      { key: 'cantidad', label: 'Cantidad', type: 'number', step: '0.1', required: true },
+      { key: 'unidad', label: 'Unidad', type: 'select', options: [
+        { value: 'kg', label: 'Kilogramos' }, { value: 'racimos', label: 'Racimos' },
+        { value: 'atados', label: 'Atados' }, { value: 'litros', label: 'Litros' },
+        { value: 'unidades', label: 'Unidades' }, { value: 'sacos', label: 'Sacos' },
+        { value: 'quintales', label: 'Quintales' }, { value: 'libras', label: 'Libras' }
+      ]},
+      { key: 'precio_unitario', label: 'Precio unitario ($)', type: 'number', step: '0.01', required: true },
+      { key: 'total', label: 'Total ($)', type: 'number', step: '0.01', readonly: true, computed: 'cantidad * precio_unitario' },
+      { key: 'comprador', label: 'Comprador', type: 'text' },
+      { key: 'forma_pago', label: 'Forma de pago', type: 'select', options: [
+        { value: 'efectivo', label: 'Efectivo' }, { value: 'transferencia', label: 'Transferencia' }, { value: 'credito', label: 'Crédito' }
+      ]},
+      { key: 'notas', label: 'Notas', type: 'textarea' }
+    ]
+  };
+
+  // Cache for dynamic select options
+  let _dynamicOptionsCache = {};
+
+  async function loadDynamicOptions() {
+    if (!currentFincaId) return;
+    try {
+      const [areas, cultivos, ciclos] = await Promise.all([
+        AgroDB.getByIndex('areas', 'finca_id', currentFincaId).catch(() => []),
+        AgroDB.getByIndex('cultivos_catalogo', 'finca_id', currentFincaId).catch(() => []),
+        AgroDB.getByIndex('ciclos_productivos', 'finca_id', currentFincaId).catch(() => [])
+      ]);
+      _dynamicOptionsCache = {
+        areas: [{ value: '', label: '-- Sin asignar --' }, ...areas.map(a => ({ value: a.id, label: `${a.nombre} (${a.tipo || ''})` }))],
+        cultivos: [{ value: '', label: '-- Sin asignar --' }, ...cultivos.map(c => ({ value: c.id, label: c.nombre }))],
+        ciclos: [{ value: '', label: '-- Sin asignar --' }, ...ciclos.filter(c => c.estado === 'activo').map(c => {
+          const cultivo = cultivos.find(cu => cu.id === c.cultivo_id);
+          return { value: c.id, label: `${cultivo?.nombre || 'Ciclo'} (${c.fecha_inicio || ''})` };
+        })]
+      };
+    } catch (e) {
+      console.warn('[IA] Error loading dynamic options:', e);
+    }
+  }
 
   function getActionLabel(action) {
     const info = ACTION_MAP[action.type];
     if (!info) return action.type;
-    const title = action.data?.titulo || action.data?.descripcion || action.data?.nombre_producto || '';
-    return `${info.icon} ${info.label}: ${title}`.substring(0, 80);
+    const title = action.data?.titulo || action.data?.descripcion || action.data?.producto || action.data?.nombre || '';
+    return `${info.icon} ${info.label}${title ? ': ' + title : ''}`.substring(0, 80);
   }
 
   function handleActionClick(e) {
@@ -687,17 +863,64 @@ const AsistenteIAModule = (() => {
     showActionConfirmModal(action, btn, msg, actionIndex);
   }
 
-  function showActionConfirmModal(action, btn, msg, actionIndex) {
+  async function showActionConfirmModal(action, btn, msg, actionIndex) {
     const info = ACTION_MAP[action.type];
     if (!info) { App.showToast('Acción no reconocida', 'error'); return; }
+
+    // Load dynamic options for selects
+    await loadDynamicOptions();
+
+    const schema = FIELD_SCHEMAS[action.type] || [];
     const data = action.data || {};
-    // Build editable fields
-    const fields = Object.entries(data).map(([key, val]) => `
-      <div class="form-group">
-        <label>${key.replace(/_/g, ' ')}</label>
-        <input class="form-input" name="action_${key}" value="${escapeHtml(String(val || ''))}" />
-      </div>
-    `).join('');
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Build form with proper controls
+    const fieldsHTML = schema.map(field => {
+      const val = data[field.key] ?? field.defaultValue ?? '';
+      const req = field.required ? '<span style="color:var(--danger)">*</span>' : '';
+      const hideStyle = field.showIf ? ` style="display:${data[field.showIf] ? '' : 'none'}"` : '';
+      const dataShowIf = field.showIf ? ` data-show-if="${field.showIf}"` : '';
+
+      let inputHTML = '';
+      switch (field.type) {
+        case 'text':
+          inputHTML = `<input class="form-input" type="text" name="action_${field.key}" value="${escapeHtml(String(val))}" ${field.required ? 'required' : ''}>`;
+          break;
+        case 'number':
+          inputHTML = `<input class="form-input" type="number" name="action_${field.key}" value="${val}" step="${field.step || '1'}" ${field.readonly ? 'readonly style="background:var(--gray-100);font-weight:600"' : ''} ${field.required ? 'required' : ''}>`;
+          break;
+        case 'date':
+          inputHTML = `<input class="form-input" type="date" name="action_${field.key}" value="${val || today}" ${field.required ? 'required' : ''}>`;
+          break;
+        case 'time':
+          inputHTML = `<input class="form-input" type="time" name="action_${field.key}" value="${val}">`;
+          break;
+        case 'textarea':
+          inputHTML = `<textarea class="form-input" name="action_${field.key}" rows="3" ${field.required ? 'required' : ''}>${escapeHtml(String(val))}</textarea>`;
+          break;
+        case 'checkbox':
+          inputHTML = `<label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" name="action_${field.key}" ${val ? 'checked' : ''}> Sí</label>`;
+          break;
+        case 'select': {
+          const opts = (field.options || []).map(o =>
+            `<option value="${o.value}" ${String(val) === String(o.value) ? 'selected' : ''}>${o.label}</option>`
+          ).join('');
+          inputHTML = `<select class="form-input" name="action_${field.key}" ${field.required ? 'required' : ''}>${opts}</select>`;
+          break;
+        }
+        case 'dynamic_select': {
+          const dynOpts = (_dynamicOptionsCache[field.source] || [{ value: '', label: '-- Cargando... --' }]).map(o =>
+            `<option value="${o.value}" ${String(val) === String(o.value) ? 'selected' : ''}>${o.label}</option>`
+          ).join('');
+          inputHTML = `<select class="form-input" name="action_${field.key}" ${field.required ? 'required' : ''}>${dynOpts}</select>`;
+          break;
+        }
+        default:
+          inputHTML = `<input class="form-input" type="text" name="action_${field.key}" value="${escapeHtml(String(val))}">`;
+      }
+
+      return `<div class="form-group"${hideStyle}${dataShowIf}><label>${field.label} ${req}</label>${inputHTML}</div>`;
+    }).join('');
 
     const modalBody = document.getElementById('modal-body');
     const modalTitle = document.getElementById('modal-title');
@@ -707,14 +930,18 @@ const AsistenteIAModule = (() => {
     modalTitle.textContent = `${info.icon} ${info.label}`;
     modalBody.innerHTML = `
       <p style="margin-bottom:0.75rem;color:var(--gray-700);font-size:0.88rem;">
-        La IA sugiere esta acción. Puedes editar los campos antes de confirmar.
+        La IA sugiere esta acción. Revisa y edita los campos antes de confirmar.
       </p>
-      <form id="ia-action-form">${fields}</form>`;
+      <form id="ia-action-form" style="max-height:60vh;overflow-y:auto">${fieldsHTML}</form>`;
     modalFooter.innerHTML = `
       <button class="btn btn-outline" id="ia-action-cancel">Cancelar</button>
-      <button class="btn btn-primary" id="ia-action-confirm">✅ Confirmar</button>`;
+      <button class="btn btn-primary" id="ia-action-confirm">✅ Confirmar y crear</button>`;
 
     document.getElementById('modal-overlay').style.display = 'flex';
+
+    // Wire up auto-calculations & conditional visibility
+    const form = document.getElementById('ia-action-form');
+    setupFormBehaviors(form, action.type);
 
     document.getElementById('ia-action-cancel').onclick = () => {
       document.getElementById('modal-overlay').style.display = 'none';
@@ -723,52 +950,119 @@ const AsistenteIAModule = (() => {
       document.getElementById('modal-overlay').style.display = 'none';
     };
     document.getElementById('ia-action-confirm').onclick = async () => {
-      // Collect edited field values
-      const form = document.getElementById('ia-action-form');
-      const editedData = {};
-      Object.keys(data).forEach(key => {
-        const input = form.querySelector(`[name="action_${key}"]`);
-        editedData[key] = input ? input.value : data[key];
-      });
+      const editedData = collectFormData(form, schema);
+      // Validate required fields
+      const missing = schema.filter(f => f.required && !editedData[f.key] && editedData[f.key] !== 0);
+      if (missing.length > 0) {
+        App.showToast(`Completa: ${missing.map(f => f.label).join(', ')}`, 'error', 4000);
+        return;
+      }
       await executeAction(info.store, editedData, btn, msg, actionIndex);
       document.getElementById('modal-overlay').style.display = 'none';
     };
   }
 
+  function setupFormBehaviors(form, actionType) {
+    if (!form) return;
+    // Auto-calculate total for costos: cantidad × costo_unitario
+    if (actionType === 'create_costo') {
+      const calc = () => {
+        const cant = parseFloat(form.querySelector('[name="action_cantidad"]')?.value) || 0;
+        const unit = parseFloat(form.querySelector('[name="action_costo_unitario"]')?.value) || 0;
+        const totalInput = form.querySelector('[name="action_total"]');
+        if (totalInput) totalInput.value = (cant * unit).toFixed(2);
+      };
+      form.querySelector('[name="action_cantidad"]')?.addEventListener('input', calc);
+      form.querySelector('[name="action_costo_unitario"]')?.addEventListener('input', calc);
+      calc(); // initial
+    }
+    // Auto-calculate total for ventas: cantidad × precio_unitario
+    if (actionType === 'create_venta') {
+      const calc = () => {
+        const cant = parseFloat(form.querySelector('[name="action_cantidad"]')?.value) || 0;
+        const unit = parseFloat(form.querySelector('[name="action_precio_unitario"]')?.value) || 0;
+        const totalInput = form.querySelector('[name="action_total"]');
+        if (totalInput) totalInput.value = (cant * unit).toFixed(2);
+      };
+      form.querySelector('[name="action_cantidad"]')?.addEventListener('input', calc);
+      form.querySelector('[name="action_precio_unitario"]')?.addEventListener('input', calc);
+      calc();
+    }
+    // Show/hide conditional fields (e.g., frecuencia_dias when recurrente is checked)
+    form.querySelectorAll('[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const fieldKey = cb.name.replace('action_', '');
+        form.querySelectorAll(`[data-show-if="${fieldKey}"]`).forEach(el => {
+          el.style.display = cb.checked ? '' : 'none';
+        });
+      });
+    });
+  }
+
+  function collectFormData(form, schema) {
+    const data = {};
+    for (const field of schema) {
+      const el = form.querySelector(`[name="action_${field.key}"]`);
+      if (!el) continue;
+      if (field.type === 'checkbox') {
+        data[field.key] = el.checked;
+      } else if (field.type === 'number') {
+        data[field.key] = el.value !== '' ? parseFloat(el.value) : null;
+      } else {
+        data[field.key] = el.value;
+      }
+    }
+    return data;
+  }
+
   async function executeAction(store, data, btn, msg, actionIndex) {
     try {
+      // Remove empty optional fields
+      const cleanData = {};
+      for (const [k, v] of Object.entries(data)) {
+        if (v !== '' && v !== null && v !== undefined) cleanData[k] = v;
+      }
+
       const record = {
         id: AgroDB.uuid(),
         finca_id: currentFincaId,
         usuario_id: AuthModule.getUserId(),
         creado_por_ia: true,
+        synced: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        ...data
+        ...cleanData
       };
-      // Set defaults per store
+
+      // Store-specific defaults
       if (store === 'tareas') {
         record.estado = record.estado || 'pendiente';
-        record.fecha_programada = record.fecha_programada || new Date().toISOString().slice(0, 10);
-      }
-      if (store === 'inspecciones') {
-        record.fecha = record.fecha || new Date().toISOString().slice(0, 10);
-      }
-      if (store === 'aplicaciones_fitosanitarias') {
-        record.fecha = record.fecha || new Date().toISOString().slice(0, 10);
+        record.creado_por = AuthModule.getUserId();
       }
       if (store === 'costos') {
-        record.fecha = record.fecha || new Date().toISOString().slice(0, 10);
-        record.total = parseFloat(record.total) || 0;
+        record.total = parseFloat(record.total) || ((parseFloat(record.cantidad) || 1) * (parseFloat(record.costo_unitario) || 0));
+        record.registrado_por = AuthModule.getUserId();
+        if (record.categoria === 'mano_obra_familiar') record.es_mano_obra_familiar = true;
       }
+      if (store === 'ventas') {
+        record.total = parseFloat(record.total) || ((parseFloat(record.cantidad) || 0) * (parseFloat(record.precio_unitario) || 0));
+        record.registrado_por = AuthModule.getUserId();
+      }
+      if (store === 'ciclos_productivos') {
+        record.estado = record.estado || 'activo';
+      }
+
       await AgroDB.add(store, record);
+
       // Mark action as executed
       if (!msg._actionsExecuted) msg._actionsExecuted = {};
       msg._actionsExecuted[actionIndex] = true;
       btn.disabled = true;
       btn.classList.add('executed');
       btn.innerHTML = btn.innerHTML.replace('✅', '✓');
-      App.showToast(`${ACTION_MAP[Object.keys(ACTION_MAP).find(k => ACTION_MAP[k].store === store)]?.label || 'Registro'} creado exitosamente`, 'success');
+
+      const actionKey = Object.keys(ACTION_MAP).find(k => ACTION_MAP[k].store === store);
+      App.showToast(`${ACTION_MAP[actionKey]?.label || 'Registro'} creado exitosamente`, 'success');
     } catch (err) {
       console.error('[IA] Error executing action:', err);
       App.showToast('Error al crear registro: ' + err.message, 'error');
@@ -778,14 +1072,41 @@ const AsistenteIAModule = (() => {
   // ── Context builder (enhanced with AIDataHelpers) ──
   async function buildContext(fincaId) {
     try {
-      // Use AIDataHelpers if available for richer context
+      await loadDynamicOptions();
+
+      // Build available IDs map for Gemini to reference
+      const idsContext = {
+        areas_disponibles: (_dynamicOptionsCache.areas || []).filter(o => o.value).map(o => ({ id: o.value, nombre: o.label })),
+        cultivos_disponibles: (_dynamicOptionsCache.cultivos || []).filter(o => o.value).map(o => ({ id: o.value, nombre: o.label })),
+        ciclos_activos: (_dynamicOptionsCache.ciclos || []).filter(o => o.value).map(o => ({ id: o.value, nombre: o.label }))
+      };
+
+      // Available action types instruction for Gemini
+      const actionInstruction = `
+ACCIONES DISPONIBLES: Cuando el usuario necesite crear registros, puedes sugerir acciones incluyendo un bloque JSON al final de tu respuesta. Formato:
+\`\`\`json
+{"actions":[{"type":"TIPO","data":{...campos...}}]}
+\`\`\`
+Tipos válidos y sus campos principales:
+- create_tarea: titulo*, descripcion, fecha_programada*, hora_inicio, duracion_minutos(15|30|60|120|180|240|480), prioridad(baja|media|alta), area_id, cultivo_id, ciclo_id, recurrente(bool), frecuencia_dias(1|3|7|14|28)
+- create_inspeccion: titulo*, fecha*, estado_general(bueno|regular|malo), area_id, ciclo_id, estado_follaje(saludable|amarillento|necrotico|marchito|defoliado), estado_riego(optimo|insuficiente|excesivo|sin_riego), estado_suelo(esponjoso|compactado|humedo|seco|erosionado), plagas_detectadas, enfermedades_detectadas, etapa_fenologica, observaciones*
+- create_aplicacion_fitosanitaria: producto*, tipo(fungicida|insecticida|herbicida|fertilizante|biocontrol|otro), fecha*, area_id, ciclo_id, dosis, metodo_aplicacion(aspersion|drench|granulado|inyeccion|manual), motivo, notas
+- create_costo: categoria*(insumo|mano_obra_contratada|mano_obra_familiar|herramienta|infraestructura|transporte|fitosanitario|riego|empaque|otro), descripcion*, fecha*, cantidad, unidad(unidad|jornal|hora|kg|litro|saco|global), costo_unitario*, notas
+- create_cosecha: ciclo_id*, fecha*, cantidad*, unidad(kg|racimos|litros|unidades|atados|sacos|quintales|libras), calidad(A|B|C), notas
+- create_ciclo: cultivo_id*, area_id, fecha_inicio*, fecha_fin_estimada, cantidad_plantas, estado(activo|completado|cancelado), notas
+- create_venta: fecha*, cultivo_id, producto, cantidad*, unidad(kg|racimos|atados|litros|unidades|sacos|quintales|libras), precio_unitario*, comprador, forma_pago(efectivo|transferencia|credito), notas
+
+IMPORTANTE: Usa IDs reales de la finca para area_id, cultivo_id y ciclo_id. Campos con * son obligatorios. El usuario podrá revisar y editar antes de confirmar.`;
+
+      let baseContext;
+
       if (typeof AIDataHelpers !== 'undefined') {
         const [farm, issues, cropStats] = await Promise.all([
           AIDataHelpers.getFarmSummary(fincaId),
           AIDataHelpers.getPendingIssues(fincaId),
           AIDataHelpers.getCropStats(fincaId)
         ]);
-        return {
+        baseContext = {
           fincaNombre: farm.finca || '',
           ubicacion: farm.ubicacion || '',
           cultivos: farm.cultivos?.map(c => c.nombre) || [],
@@ -800,19 +1121,25 @@ const AsistenteIAModule = (() => {
             margen: c.margen, problemas: c.problemas
           })) || []
         };
+      } else {
+        const finca = await AgroDB.getById('fincas', fincaId);
+        const ciclos = await AgroDB.getByIndex('ciclos_productivos', 'finca_id', fincaId);
+        const activos = ciclos.filter(c => c.estado === 'activo');
+        const cultivos = await AgroDB.getByIndex('cultivos_catalogo', 'finca_id', fincaId);
+        const areas = await AgroDB.getByIndex('areas', 'finca_id', fincaId);
+        baseContext = {
+          fincaNombre: finca?.nombre || '',
+          cultivos: cultivos.map(c => c.nombre),
+          ciclosActivos: activos.length,
+          areas: areas.map(a => a.nombre),
+          ubicacion: finca?.ubicacion || ''
+        };
       }
-      // Fallback
-      const finca = await AgroDB.getById('fincas', fincaId);
-      const ciclos = await AgroDB.getByIndex('ciclos_productivos', 'finca_id', fincaId);
-      const activos = ciclos.filter(c => c.estado === 'activo');
-      const cultivos = await AgroDB.getByIndex('cultivos_catalogo', 'finca_id', fincaId);
-      const areas = await AgroDB.getByIndex('areas', 'finca_id', fincaId);
+
       return {
-        fincaNombre: finca?.nombre || '',
-        cultivos: cultivos.map(c => c.nombre),
-        ciclosActivos: activos.length,
-        areas: areas.map(a => a.nombre),
-        ubicacion: finca?.ubicacion || ''
+        ...baseContext,
+        ...idsContext,
+        instrucciones_acciones: actionInstruction
       };
     } catch { return {}; }
   }

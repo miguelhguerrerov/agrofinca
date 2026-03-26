@@ -189,19 +189,26 @@ const IngAgricultoresModule = (() => {
 
       statusDiv.innerHTML = '<span class="text-muted">Buscando...</span>';
 
-      // Search for existing user
-      const profiles = await AgroDB.query('user_profiles', r => r.email === emailValue);
+      // Search on SERVER (not local DB — other users aren't in local IndexedDB)
+      try {
+        const profiles = await SupabaseClient.select('user_profiles', { email: emailValue });
 
-      if (profiles.length > 0) {
-        foundUserId = profiles[0].id;
-        statusDiv.innerHTML = `<span style="color:var(--green-700);">✅ Usuario encontrado: ${profiles[0].nombre || profiles[0].full_name || profiles[0].email}</span>`;
-        extraDiv.style.display = 'none';
-        confirmBtn.disabled = false;
-      } else {
-        foundUserId = null;
-        statusDiv.innerHTML = `<span style="color:var(--amber-700);">⚠️ Usuario no encontrado. Se creará un registro asistido.</span>`;
-        extraDiv.style.display = 'block';
-        confirmBtn.disabled = false;
+        if (profiles && profiles.length > 0) {
+          foundUserId = profiles[0].id;
+          const nombre = profiles[0].nombre || profiles[0].full_name || profiles[0].email;
+          const rol = profiles[0].rol || 'agricultor';
+          statusDiv.innerHTML = `<span style="color:var(--green-700);">✅ Usuario encontrado: ${nombre} (${rol})</span>`;
+          extraDiv.style.display = 'none';
+          confirmBtn.disabled = false;
+        } else {
+          foundUserId = null;
+          statusDiv.innerHTML = `<span style="color:var(--amber-700);">⚠️ Usuario no registrado. Se enviará invitación cuando se registre.</span>`;
+          extraDiv.style.display = 'block';
+          confirmBtn.disabled = false;
+        }
+      } catch (err) {
+        statusDiv.innerHTML = `<span style="color:var(--red-600);">❌ Error al buscar: ${err.message}. Verifica tu conexión.</span>`;
+        confirmBtn.disabled = true;
       }
     });
 

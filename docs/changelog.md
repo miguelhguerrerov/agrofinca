@@ -1,5 +1,21 @@
 # AgroFinca - Historial de Versiones
 
+## v4.1 — Sync Engine v5 (Marzo 2026)
+
+- Health check antes de sync (evita reintentos contra servidor caido)
+- Retornos estructurados en supabase-client.js (ya no retorna null)
+- Backoff exponencial por item (30s, 60s, 120s, 240s, 480s, cap 10min)
+- Batch upsert (multiples registros en 1 request)
+- Deteccion de conflictos (local modificado + remoto mas nuevo → sync_conflicts)
+- Paginacion en pull (>500 registros)
+- Deduplicacion en sync_queue (index compuesto store_record)
+- Pagina de diagnostico sync (items fallidos, conflictos, log)
+- Cascada mejorada (blockedDeps Map, auto-desbloqueo de hijos)
+- DB_VERSION 9, CACHE v17
+- Items permanentes no se eliminan — usuario decide via diagnostico
+
+---
+
 ## v4.0 — Rol Ingeniero Agronomo (Marzo 2026)
 
 ### Nuevo rol: Ingeniero Agronomo

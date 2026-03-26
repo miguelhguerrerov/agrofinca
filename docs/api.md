@@ -106,6 +106,52 @@ async function getUpdatedSince(table, since, fincaId) {
 
 ---
 
+## Funciones de supabase-client.js (v4.1 — Sync Engine v5)
+
+### healthCheck()
+
+Verifica la disponibilidad del servidor antes de sincronizar.
+
+```
+HEAD /rest/v1/
+Timeout: 5 segundos
+```
+
+Retorna `{ ok: true }` si el servidor responde, `{ ok: false, error: '...' }` si no.
+
+### batchUpsert(table, records[])
+
+Envia multiples registros en una sola peticion POST.
+
+```javascript
+POST /rest/v1/{tabla}
+Header: Prefer: resolution=merge-duplicates,return=representation
+Body: [record1, record2, ...]
+```
+
+Retorna `{ ok, data, error, code, permanent }`. Si falla, el sync engine hace fallback a upsert individual.
+
+### Retornos estructurados
+
+Todas las funciones de API (`upsert`, `select`, `getUpdatedSince`, `deleteRecord`, `batchUpsert`) ahora retornan un objeto consistente:
+
+```javascript
+{
+  ok: boolean,       // true si la operacion fue exitosa
+  data: any,         // datos retornados (array, objeto, o null)
+  error: string,     // mensaje de error (null si ok)
+  code: number,      // codigo HTTP (null si error de red)
+  permanent: boolean // true si el error no tiene sentido reintentar (400, 404)
+}
+```
+
+Ejemplos:
+- Exito: `{ ok: true, data: [{...}], error: null, code: 200, permanent: false }`
+- Error transitorio: `{ ok: false, data: null, error: 'Network error', code: null, permanent: false }`
+- Error permanente: `{ ok: false, data: null, error: 'Column not found', code: 400, permanent: true }`
+
+---
+
 ## Edge Function: gemini-proxy
 
 ### Endpoint

@@ -4,12 +4,12 @@
 
 AgroFinca usa dos capas de base de datos:
 
-1. **IndexedDB** (local, offline-first): Base de datos primaria en el navegador (`agrofinca_db`, version 8)
+1. **IndexedDB** (local, offline-first): Base de datos primaria en el navegador (`agrofinca_db`, version 9)
 2. **PostgreSQL** (remoto, Supabase): Base de datos en la nube para sincronizacion y persistencia
 
 ## IndexedDB - Object Stores (AgroDB)
 
-La base de datos local tiene **43 object stores** (28 originales + 15 nuevos en v4.0). Todos usan `id` (UUID) como keyPath.
+La base de datos local tiene **46 object stores** (28 originales + 15 en v4.0 + 3 en v4.1). Todos usan `id` (UUID) como keyPath, excepto `sync_log` que usa autoIncrement.
 
 ### Stores sincronizados con Supabase
 
@@ -62,9 +62,45 @@ La base de datos local tiene **43 object stores** (28 originales + 15 nuevos en 
 | Store | Descripcion |
 |-------|-------------|
 | `usuarios` | Cache local del usuario autenticado |
-| `sync_queue` | Cola de operaciones pendientes de sync (autoIncrement) |
+| `sync_queue` | Cola de operaciones pendientes de sync (autoIncrement). Index compuesto `store_record` sobre [store_name, record_id] para deduplicacion |
 | `user_profiles_local` | Perfil local con plan (free/paid) |
 | `payment_history` | Historial de pagos |
+| `sync_conflicts` | Conflictos detectados durante pull (v4.1) |
+| `sync_log` | Log de operaciones de sync con auto-prune (v4.1, autoIncrement) |
+
+### Store sync_conflicts (v4.1)
+
+Almacena conflictos detectados cuando un registro local modificado (`synced: false`) tiene una version remota mas reciente.
+
+| Campo | Tipo | Descripcion |
+|-------|------|-------------|
+| id | UUID (keyPath) | Identificador unico del conflicto |
+| table_name | TEXT | Nombre de la tabla/store afectado |
+| record_id | UUID | ID del registro en conflicto |
+| local_data | Object | Copia completa del registro local |
+| remote_data | Object | Copia completa del registro remoto |
+| created_at | TEXT (ISO) | Timestamp de deteccion del conflicto |
+| resolved | BOOLEAN | Si el conflicto fue resuelto |
+| resolution | TEXT | Tipo de resolucion: 'local', 'remote', 'manual', null |
+
+### Store sync_log (v4.1)
+
+Log de operaciones de sincronizacion. Usa autoIncrement como keyPath. Se auto-poda a 200 entradas.
+
+| Campo | Tipo | Descripcion |
+|-------|------|-------------|
+| id | INTEGER (auto) | ID autoincremental |
+| timestamp | TEXT (ISO) | Momento de la operacion |
+| type | TEXT | Tipo: 'push', 'pull', 'conflict', 'error' |
+| table | TEXT | Tabla/store afectado |
+| record_id | UUID | ID del registro |
+| result | TEXT | Resultado: 'success', 'error', 'conflict', 'skipped' |
+| error | TEXT | Mensaje de error (si aplica) |
+| duration_ms | INTEGER | Duracion de la operacion en milisegundos |
+
+### Index compuesto en sync_queue (v4.1)
+
+Se agrego un index compuesto `store_record` sobre `[store_name, record_id]` en el store `sync_queue` para evitar duplicados al encolar operaciones sobre el mismo registro.
 
 ## PostgreSQL (Supabase) - Tablas
 

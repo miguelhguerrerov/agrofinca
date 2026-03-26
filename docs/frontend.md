@@ -296,6 +296,36 @@ Se usa Leaflet.js con:
 - OpenStreetMap (calles)
 - Leaflet Draw para dibujar poligonos de areas
 
+## Sync Diagnostics (v4.1)
+
+### Nuevo modulo: sync-diagnostics.js
+
+Pagina dedicada al diagnostico del estado de sincronizacion, accesible desde el indicador de sync en la barra superior.
+
+### UI de sync mejorada
+
+El indicador de estado de sync en la barra superior ahora muestra 5 estados visuales:
+
+| Estado | Icono/Color | Descripcion |
+|--------|-------------|-------------|
+| `unreachable` | Gris | Servidor no disponible (health check fallo) |
+| `has-errors` | Rojo | Hay items con error permanente en la cola |
+| `has-conflicts` | Naranja | Hay conflictos sin resolver |
+| `pending` | Azul (animado) | Sincronizacion en progreso o items pendientes |
+| `synced` | Verde | Todo sincronizado correctamente |
+
+### Status indicator clickable
+
+El indicador de sync es clickable. Al hacer tap/click, navega directamente a la pagina de diagnostico (`sync-diagnostics`).
+
+### Toasts automaticos
+
+Se muestran toasts automaticos para:
+- **Errores permanentes**: Cuando un item falla con error 400/404, se muestra un toast de tipo `error` indicando la tabla y el registro afectado.
+- **Conflictos detectados**: Cuando se detecta un conflicto durante el pull, se muestra un toast de tipo `warning` indicando cuantos conflictos nuevos hay.
+
+---
+
 ## Carga de Scripts
 
 Los scripts se cargan en orden de dependencia en `index.html`:

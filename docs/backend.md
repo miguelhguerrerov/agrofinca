@@ -245,6 +245,64 @@ Tablas con `finca_id` (como `ensayos`, `prescripciones`, `ventas_insumos`) permi
 
 ---
 
+## Sync Engine v5
+
+### Cambios respecto a v4
+
+El motor de sincronizacion (`js/sync.js`) se actualizo significativamente en v5 para mejorar la resiliencia, el diagnostico y el manejo de conflictos.
+
+### Health check antes de sincronizar
+
+Antes de ejecutar push o pull, se realiza un `HEAD /rest/v1/` con timeout de 5 segundos. Si el servidor no responde, se aborta el ciclo completo de sync, evitando reintentos innecesarios contra un servidor caido.
+
+### Retornos estructurados
+
+Todas las funciones de `supabase-client.js` (`upsert`, `select`, `getUpdatedSince`, `deleteRecord`, `batchUpsert`) retornan un objeto estructurado:
+
+```javascript
+{ ok: boolean, data: any, error: string|null, code: number|null, permanent: boolean }
+```
+
+Ya no se retorna `null` en caso de error. El campo `permanent` indica si el error no tiene sentido reintentar (ej: 400, 404).
+
+### Backoff exponencial por item
+
+Cada item en la cola tiene su propio contador de reintentos. El tiempo de espera entre reintentos sigue la formula:
+
+```
+delay = min(30s * 2^retryCount + jitter, 600s)  // cap 10 minutos
+```
+
+Secuencia aproximada: 30s, 60s, 120s, 240s, 480s, 600s (cap).
+
+Los items con error permanente (`permanent: true`) no se reintentan — permanecen en la cola para que el usuario decida via la pagina de diagnostico.
+
+### Batch upsert
+
+Para tablas con multiples registros pendientes, se usa `POST` con body array en una sola peticion. Si el batch falla, se hace fallback a upsert individual por registro.
+
+### Deteccion de conflictos
+
+Durante el pull, si un registro local tiene `synced: false` (modificado localmente) y el registro remoto tiene un `updated_at` mas reciente, se detecta un conflicto. En vez de sobrescribir, se guarda en el store `sync_conflicts` con ambas versiones (local y remota) para resolucion manual.
+
+### Cascada mejorada
+
+Se usa un `Map` (`blockedDeps`) para rastrear dependencias bloqueadas. Cuando un padre falla al sincronizar, todos sus hijos se bloquean automaticamente. Cuando el padre se sincroniza exitosamente en un ciclo posterior, los hijos se desbloquean automaticamente.
+
+### Paginacion en pull
+
+El pull ejecuta un loop mientras `data.length === 500` (limite de PostgREST), avanzando el cursor con el `updated_at` del ultimo registro recibido, para descargar todos los registros sin perder datos.
+
+### Logging (sync_log)
+
+Cada operacion de sync (push y pull) se registra en el store `sync_log` con timestamp, tipo, tabla, record_id, resultado, error y duracion en ms. El log se auto-poda a 200 entradas para no crecer indefinidamente.
+
+### Items permanentes
+
+Los items con error permanente (ej: schema mismatch 400, registro no encontrado 404) **no se eliminan** de la cola. Permanecen visibles en la pagina de diagnostico para que el usuario decida si reintentar, corregir o descartar manualmente.
+
+---
+
 ## Service Worker (sw.js)
 
 ### Cache

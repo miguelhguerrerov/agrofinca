@@ -153,17 +153,40 @@ const App = (() => {
   function updateNavigationForRole() {
     const isIng = AuthModule.isIngeniero();
 
-    // Hide agricultor-only nav items when ingeniero
-    const agriNav = ['dashboard', 'produccion', 'ventas', 'costos', 'finanzas', 'tareas', 'inspecciones', 'fitosanitario'];
-    const ingNav = ['ing-dashboard', 'ing-agricultores', 'ing-inspecciones', 'ing-prescripciones', 'ing-productos', 'ing-ventas', 'ing-chat', 'ing-calendario', 'ing-reportes'];
+    // ALL agricultor-only nav pages (hide when ingeniero)
+    const agriNav = ['dashboard', 'fincas', 'produccion', 'ventas', 'costos', 'finanzas', 'tareas',
+      'inspecciones', 'fitosanitario', 'lombricompost', 'apicultura', 'animales'];
+    const ingNav = ['ing-dashboard', 'ing-agricultores', 'ing-inspecciones', 'ing-prescripciones',
+      'ing-productos', 'ing-ventas', 'ing-chat', 'ing-calendario', 'ing-reportes'];
 
+    // Hide/show sidebar nav items
     for (const id of agriNav) {
-      const el = document.querySelector(`[data-page="${id}"]`);
-      if (el) el.closest('li, .nav-item')?.style.setProperty('display', isIng ? 'none' : '');
+      document.querySelectorAll(`[data-page="${id}"]`).forEach(el => {
+        const parent = el.closest('li, .nav-item, .bottom-nav-item, .more-item');
+        if (parent) parent.style.display = isIng ? 'none' : '';
+      });
     }
     for (const id of ingNav) {
-      const el = document.querySelector(`[data-page="${id}"]`);
-      if (el) el.closest('li, .nav-item')?.style.setProperty('display', isIng ? '' : 'none');
+      document.querySelectorAll(`[data-page="${id}"]`).forEach(el => {
+        const parent = el.closest('li, .nav-item');
+        if (parent) parent.style.display = isIng ? '' : 'none';
+      });
+    }
+
+    // Hide bottom nav bar entirely for ingeniero
+    const bottomNav = document.getElementById('bottom-nav');
+    if (bottomNav) bottomNav.style.display = isIng ? 'none' : '';
+
+    // Hide section headers for ingeniero
+    if (isIng) {
+      document.querySelectorAll('.nav-section-title').forEach(el => {
+        const text = el.textContent?.trim().toUpperCase();
+        if (['PRODUCCIÓN', 'ACTIVIDADES ESPECIALES', 'FINANZAS', 'PLANIFICACIÓN'].includes(text)) {
+          el.style.display = 'none';
+        }
+      });
+    } else {
+      document.querySelectorAll('.nav-section-title').forEach(el => el.style.display = '');
     }
   }
 

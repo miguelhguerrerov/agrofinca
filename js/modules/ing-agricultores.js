@@ -151,30 +151,25 @@ const IngAgricultoresModule = (() => {
   // AFILIAR AGRICULTOR
   // =============================================
   function showAfiliarForm(parentContainer) {
-    const modal = `
-      <div class="modal-header">
-        <h3>👨‍🌾 Afiliar Agricultor</h3>
+    const bodyHTML = `
+      <div class="form-group">
+        <label class="form-label">Correo electrónico del agricultor</label>
+        <input type="email" class="form-input" id="afiliar-email" placeholder="agricultor@email.com">
+        <div id="afiliar-email-status" class="text-sm mt-1"></div>
       </div>
-      <div class="modal-body">
+      <div id="afiliar-extra" style="display:none;">
         <div class="form-group">
-          <label class="form-label">Correo electrónico del agricultor</label>
-          <input type="email" class="form-input" id="afiliar-email" placeholder="agricultor@email.com">
-          <div id="afiliar-email-status" class="text-sm mt-1"></div>
+          <label class="form-label">Nombre (opcional para registro asistido)</label>
+          <input type="text" class="form-input" id="afiliar-nombre" placeholder="Nombre del agricultor">
         </div>
-        <div id="afiliar-extra" style="display:none;">
-          <div class="form-group">
-            <label class="form-label">Nombre (opcional para registro asistido)</label>
-            <input type="text" class="form-input" id="afiliar-nombre" placeholder="Nombre del agricultor">
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" id="afiliar-cancel">Cancelar</button>
-        <button class="btn btn-primary" id="afiliar-confirm" disabled>Afiliar</button>
       </div>
     `;
+    const footerHTML = `
+      <button class="btn btn-outline" id="afiliar-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="afiliar-confirm" disabled>Afiliar</button>
+    `;
 
-    App.showModal(modal);
+    App.showModal('👨‍🌾 Afiliar Agricultor', bodyHTML, footerHTML);
 
     let foundUserId = null;
     let emailValue = '';
@@ -291,11 +286,8 @@ const IngAgricultoresModule = (() => {
 
     const nombre = profile ? (profile.nombre || profile.full_name || profile.email) : 'Agricultor';
 
-    const modal = `
-      <div class="modal-header">
-        <h3>👤 ${nombre}</h3>
-      </div>
-      <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+    const fichaBody = `
+      <div style="max-height:70vh;overflow-y:auto;">
         <!-- Tabs -->
         <div class="form-row" style="gap:0;border-bottom:2px solid var(--gray-300);margin-bottom:1rem;">
           <button class="btn btn-sm btn-outline ficha-tab active" data-tab="info" style="border-radius:8px 8px 0 0;">Info</button>
@@ -403,12 +395,9 @@ const IngAgricultoresModule = (() => {
           `).join('')}
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" id="ficha-close">Cerrar</button>
-      </div>
     `;
 
-    App.showModal(modal);
+    App.showModal(`👤 ${nombre}`, fichaBody, '<button class="btn btn-outline" id="ficha-close">Cerrar</button>');
 
     // Tab switching
     document.querySelectorAll('.ficha-tab').forEach(tab => {
@@ -462,11 +451,8 @@ const IngAgricultoresModule = (() => {
 
     const supHa = areas.reduce((s, a) => s + (a.area_m2 || 0), 0) / 10000;
 
-    const modal = `
-      <div class="modal-header">
-        <h3>🏡 ${finca.nombre}</h3>
-      </div>
-      <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+    const fincaBody = `
+      <div style="max-height:70vh;overflow-y:auto;">
         <div class="card">
           <div class="card-title">Información general</div>
           <div class="data-list-item" style="padding:0.4rem 0;">
@@ -559,13 +545,13 @@ const IngAgricultoresModule = (() => {
           ` : ''}
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" id="finca-afiliada-close">Cerrar</button>
-        <button class="btn btn-primary" id="finca-afiliada-nueva-insp">📋 Nueva inspección en esta finca</button>
-      </div>
+    `;
+    const fincaFooter = `
+      <button class="btn btn-outline" id="finca-afiliada-close">Cerrar</button>
+      <button class="btn btn-primary" id="finca-afiliada-nueva-insp">📋 Nueva inspección en esta finca</button>
     `;
 
-    App.showModal(modal);
+    App.showModal('🏡 ' + finca.nombre, fincaBody, fincaFooter);
 
     document.getElementById('finca-afiliada-close')?.addEventListener('click', () => App.closeModal());
     document.getElementById('finca-afiliada-nueva-insp')?.addEventListener('click', () => {

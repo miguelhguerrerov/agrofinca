@@ -1068,6 +1068,10 @@ ALTER TABLE cultivos_catalogo ADD COLUMN IF NOT EXISTS fases_template JSONB;
 ALTER TABLE costos ADD COLUMN IF NOT EXISTS activo_id UUID;
 
 -- ═══════════════════════════════════════════════════════════════
+-- Allow authenticated users to search other users by email (for affiliation)
+DROP POLICY IF EXISTS "user_profiles_search" ON user_profiles;
+CREATE POLICY "user_profiles_search" ON user_profiles FOR SELECT USING (auth.uid() IS NOT NULL);
+
 -- v4.0: ROL INGENIERO AGRÓNOMO
 -- ═══════════════════════════════════════════════════════════════
 

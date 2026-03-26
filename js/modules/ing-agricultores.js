@@ -241,7 +241,7 @@ const IngAgricultoresModule = (() => {
           created_at: new Date().toISOString()
         };
 
-        await AgroDB.save('ingeniero_agricultores', record);
+        await AgroDB.add('ingeniero_agricultores', record);
 
         App.showToast('Agricultor afiliado exitosamente', 'success');
         App.closeModal();

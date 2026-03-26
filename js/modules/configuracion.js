@@ -95,6 +95,11 @@ const ConfiguracionModule = (() => {
         <div class="flex gap-1 mt-1">
           <button class="btn btn-outline btn-sm" id="btn-force-sync">🔄 Forzar Sincronización</button>
         </div>
+        <div class="mt-1">
+          <a href="#" onclick="App.navigateTo('sync-diagnostics');return false;" class="text-sm" style="color:var(--green-600);">
+            🔧 Ver diagnóstico completo de sincronización
+          </a>
+        </div>
       </div>
 
       <!-- Export/Import -->

@@ -5,7 +5,7 @@
 
 const AgroDB = (() => {
   const DB_NAME = 'agrofinca_db';
-  const DB_VERSION = 8;
+  const DB_VERSION = 9;
   let db = null;
 
   // All object stores (tables)
@@ -54,7 +54,9 @@ const AgroDB = (() => {
     'chat_conversaciones',
     'chat_mensajes',
     'chat_grupos',
-    'chat_grupo_miembros'
+    'chat_grupo_miembros',
+    'sync_conflicts',
+    'sync_log'
   ];
 
   // Initialize database
@@ -447,6 +449,33 @@ const AgroDB = (() => {
           store.createIndex('usuario_id', 'usuario_id', { unique: false });
           store.createIndex('synced', 'synced', { unique: false });
         }
+
+        // --- sync_conflicts (local-only diagnostic store) ---
+        if (!database.objectStoreNames.contains('sync_conflicts')) {
+          const store = database.createObjectStore('sync_conflicts', { keyPath: 'id' });
+          store.createIndex('table_name', 'table_name', { unique: false });
+          store.createIndex('record_id', 'record_id', { unique: false });
+          store.createIndex('resolved', 'resolved', { unique: false });
+          store.createIndex('created_at', 'created_at', { unique: false });
+        }
+
+        // --- sync_log (local-only diagnostic store) ---
+        if (!database.objectStoreNames.contains('sync_log')) {
+          const store = database.createObjectStore('sync_log', { keyPath: 'id', autoIncrement: true });
+          store.createIndex('timestamp', 'timestamp', { unique: false });
+          store.createIndex('type', 'type', { unique: false });
+        }
+
+        // Add compound index for deduplication (only if upgrading)
+        if (database.objectStoreNames.contains('sync_queue')) {
+          try {
+            const tx = event.target.transaction;
+            const store = tx.objectStore('sync_queue');
+            if (!store.indexNames.contains('store_record')) {
+              store.createIndex('store_record', ['store_name', 'record_id'], { unique: false });
+            }
+          } catch (e) { console.warn('Could not add store_record index:', e.message); }
+        }
       };
     });
   }
@@ -569,15 +598,50 @@ const AgroDB = (() => {
   // Sync queue management
   async function addToSyncQueue(storeName, action, recordId) {
     return new Promise((resolve, reject) => {
-      const store = getStore('sync_queue', 'readwrite');
-      const entry = {
-        store_name: storeName,
-        action,
-        record_id: recordId,
-        timestamp: new Date().toISOString()
+      const request = indexedDB.open(DB_NAME);
+      request.onsuccess = (e) => {
+        const database = e.target.result;
+        const tx = database.transaction('sync_queue', 'readwrite');
+        const store = tx.objectStore('sync_queue');
+
+        // Check for existing entry (dedup)
+        if (store.indexNames.contains('store_record')) {
+          const idx = store.index('store_record');
+          const range = IDBKeyRange.only([storeName, recordId]);
+          const cursorReq = idx.openCursor(range);
+          cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result;
+            if (cursor) {
+              // Update existing entry instead of creating duplicate
+              const existing = cursor.value;
+              existing.action = action;
+              existing.timestamp = new Date().toISOString();
+              cursor.update(existing);
+              database.close();
+              resolve(existing);
+            } else {
+              // No existing entry — add new
+              const entry = { store_name: storeName, action, record_id: recordId, timestamp: new Date().toISOString() };
+              const addReq = store.add(entry);
+              addReq.onsuccess = () => { database.close(); resolve(entry); };
+              addReq.onerror = () => { database.close(); reject(addReq.error); };
+            }
+          };
+          cursorReq.onerror = () => {
+            // Fallback: just add (index might not exist yet)
+            const entry = { store_name: storeName, action, record_id: recordId, timestamp: new Date().toISOString() };
+            const addReq = store.add(entry);
+            addReq.onsuccess = () => { database.close(); resolve(entry); };
+            addReq.onerror = () => { database.close(); reject(addReq.error); };
+          };
+        } else {
+          // No index available — add without dedup
+          const entry = { store_name: storeName, action, record_id: recordId, timestamp: new Date().toISOString() };
+          const addReq = store.add(entry);
+          addReq.onsuccess = () => { database.close(); resolve(entry); };
+          addReq.onerror = () => { database.close(); reject(addReq.error); };
+        }
       };
-      const request = store.add(entry);
-      request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
   }
@@ -851,6 +915,142 @@ const AgroDB = (() => {
     }
   }
 
+  // ── Sync Conflicts ──
+  async function addConflict(tableName, recordId, localData, remoteData) {
+    const conflict = {
+      id: uuid(),
+      table_name: tableName,
+      record_id: recordId,
+      local_data: localData,
+      remote_data: remoteData,
+      created_at: new Date().toISOString(),
+      resolved: false,
+      resolution: null
+    };
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME);
+      request.onsuccess = (e) => {
+        const db = e.target.result;
+        const tx = db.transaction('sync_conflicts', 'readwrite');
+        const store = tx.objectStore('sync_conflicts');
+        const addReq = store.put(conflict);
+        addReq.onsuccess = () => { db.close(); resolve(conflict); };
+        addReq.onerror = () => { db.close(); reject(addReq.error); };
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function getConflicts(resolvedFilter = false) {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME);
+      request.onsuccess = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('sync_conflicts')) { db.close(); resolve([]); return; }
+        const tx = db.transaction('sync_conflicts', 'readonly');
+        const store = tx.objectStore('sync_conflicts');
+        const idx = store.index('resolved');
+        const range = IDBKeyRange.only(resolvedFilter);
+        const getReq = idx.getAll(range);
+        getReq.onsuccess = () => { db.close(); resolve(getReq.result || []); };
+        getReq.onerror = () => { db.close(); reject(getReq.error); };
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function resolveConflict(conflictId, resolution, resolvedData) {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME);
+      request.onsuccess = (e) => {
+        const db = e.target.result;
+        const tx = db.transaction('sync_conflicts', 'readwrite');
+        const store = tx.objectStore('sync_conflicts');
+        const getReq = store.get(conflictId);
+        getReq.onsuccess = () => {
+          const conflict = getReq.result;
+          if (!conflict) { db.close(); resolve(null); return; }
+          conflict.resolved = true;
+          conflict.resolution = resolution;
+          conflict.resolved_at = new Date().toISOString();
+          const putReq = store.put(conflict);
+          putReq.onsuccess = () => { db.close(); resolve(conflict); };
+          putReq.onerror = () => { db.close(); reject(putReq.error); };
+        };
+        getReq.onerror = () => { db.close(); reject(getReq.error); };
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // ── Sync Log ──
+  async function addSyncLogEntry(entry) {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME);
+      request.onsuccess = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('sync_log')) { db.close(); resolve(null); return; }
+        const tx = db.transaction('sync_log', 'readwrite');
+        const store = tx.objectStore('sync_log');
+        entry.timestamp = entry.timestamp || new Date().toISOString();
+        const addReq = store.add(entry);
+        addReq.onsuccess = () => {
+          // Auto-prune to last 200 entries
+          const countReq = store.count();
+          countReq.onsuccess = () => {
+            if (countReq.result > 200) {
+              const cursorReq = store.openCursor();
+              let toDelete = countReq.result - 200;
+              cursorReq.onsuccess = () => {
+                const cursor = cursorReq.result;
+                if (cursor && toDelete > 0) {
+                  cursor.delete();
+                  toDelete--;
+                  cursor.continue();
+                } else {
+                  db.close();
+                  resolve(entry);
+                }
+              };
+            } else {
+              db.close();
+              resolve(entry);
+            }
+          };
+        };
+        addReq.onerror = () => { db.close(); reject(addReq.error); };
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function getSyncLog(limit = 50) {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME);
+      request.onsuccess = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('sync_log')) { db.close(); resolve([]); return; }
+        const tx = db.transaction('sync_log', 'readonly');
+        const store = tx.objectStore('sync_log');
+        const idx = store.index('timestamp');
+        const results = [];
+        const cursorReq = idx.openCursor(null, 'prev'); // newest first
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (cursor && results.length < limit) {
+            results.push(cursor.value);
+            cursor.continue();
+          } else {
+            db.close();
+            resolve(results);
+          }
+        };
+        cursorReq.onerror = () => { db.close(); reject(cursorReq.error); };
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   return {
     init,
     uuid,
@@ -870,6 +1070,11 @@ const AgroDB = (() => {
     clearSyncQueueItem,
     getPendingSyncCount,
     addToSyncQueue,
+    addConflict,
+    getConflicts,
+    resolveConflict,
+    addSyncLogEntry,
+    getSyncLog,
     exportAll,
     importAll,
     seedDefaultCrops,

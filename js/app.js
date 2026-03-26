@@ -34,7 +34,8 @@ const App = (() => {
     'ing-chat': () => IngChatModule,
     'mi-tecnico': () => MiTecnicoModule,
     'ing-calendario': () => IngCalendarioModule,
-    'ing-reportes': () => IngReportesModule
+    'ing-reportes': () => IngReportesModule,
+    'sync-diagnostics': () => SyncDiagnosticsModule
   };
 
   const pageNames = {
@@ -62,7 +63,8 @@ const App = (() => {
     'ing-chat': 'Chat',
     'mi-tecnico': 'Mi Técnico',
     'ing-calendario': 'Calendario',
-    'ing-reportes': 'Reportes'
+    'ing-reportes': 'Reportes',
+    'sync-diagnostics': 'Diagnóstico Sync'
   };
 
   // Initialize the app
@@ -144,8 +146,17 @@ const App = (() => {
     updateNavigationForRole();
 
     // Start sync
-    SyncEngine.setStatusCallback(updateSyncUI);
+    SyncEngine.setStatusCallback((status, pendingCount, failedCount, conflictCount) => {
+      updateSyncUI(status, pendingCount, failedCount, conflictCount);
+    });
     SyncEngine.startAutoSync();
+
+    // Make sync-status clickable
+    const syncEl = document.getElementById('sync-status');
+    if (syncEl) {
+      syncEl.style.cursor = 'pointer';
+      syncEl.addEventListener('click', () => navigateTo('sync-diagnostics'));
+    }
 
     // Navigate to default page based on role
     const defaultPage = AuthModule.isIngeniero() ? 'ing-dashboard' : 'dashboard';
@@ -467,21 +478,40 @@ const App = (() => {
   }
 
   // Sync UI
-  function updateSyncUI(status, pendingCount) {
-    const dot = document.querySelector('.sync-dot');
-    const countEl = document.querySelector('.sync-count');
+  function updateSyncUI(status, pendingCount, failedCount = 0, conflictCount = 0) {
+    const el = document.getElementById('sync-status');
+    if (!el) return;
 
-    dot.className = 'sync-dot';
-    if (status === 'online') {
-      dot.classList.add('online');
-      countEl.textContent = pendingCount > 0 ? `(${pendingCount})` : '';
-    } else if (status === 'offline') {
-      dot.classList.add('offline');
-      countEl.textContent = 'Sin conexión';
+    let dotClass = '';
+    let text = '';
+
+    if (status === 'server-unreachable') {
+      dotClass = 'unreachable';
+      text = 'Servidor no disponible';
     } else if (status === 'syncing') {
-      dot.classList.add('syncing');
-      countEl.textContent = 'Sincronizando...';
+      dotClass = 'syncing';
+      text = 'Sincronizando...';
+    } else if (status === 'offline') {
+      dotClass = 'offline';
+      text = 'Sin conexión';
+    } else {
+      // online
+      if (failedCount > 0) {
+        dotClass = 'has-errors';
+        text = `${failedCount} error${failedCount > 1 ? 'es' : ''}`;
+      } else if (conflictCount > 0) {
+        dotClass = 'has-conflicts';
+        text = `${conflictCount} conflicto${conflictCount > 1 ? 's' : ''}`;
+      } else if (pendingCount > 0) {
+        dotClass = 'pending';
+        text = `(${pendingCount})`;
+      } else {
+        dotClass = 'synced';
+        text = '';
+      }
     }
+
+    el.innerHTML = `<span class="sync-dot ${dotClass}"></span> <span class="sync-text">${text}</span>`;
   }
 
   // Toast notifications

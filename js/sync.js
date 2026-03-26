@@ -1,9 +1,10 @@
 // ============================================
-// AgroFinca - Sync Engine (v4)
+// AgroFinca - Sync Engine (v5)
 // Bidirectional sync: IndexedDB <-> Supabase
 // Offline-first: IndexedDB is primary DB
-// v4: retry limits, permanent fail detection,
-// backoff, better error categorization
+// v5: structured results, batch upsert, conflict
+// detection, sync_log, backoff with jitter,
+// permanent fail tracking without queue removal
 // ============================================
 
 const SyncEngine = (() => {
@@ -12,27 +13,42 @@ const SyncEngine = (() => {
   let onStatusChange = null;
   let lastSyncTimestamp = localStorage.getItem('agrofinca_last_sync') || null;
 
-  // Max retries before marking an item as permanently failed
+  // Retry state management (persisted in localStorage)
   const MAX_RETRIES = 5;
+  const RETRY_STATE_KEY = 'agrofinca_sync_retry_state';
 
-  // Track retry counts per queue item (persisted in localStorage)
-  function getRetryCount(queueItemId) {
-    const retries = JSON.parse(localStorage.getItem('agrofinca_sync_retries') || '{}');
-    return retries[queueItemId] || 0;
+  function getRetryState(queueItemId) {
+    try {
+      const all = JSON.parse(localStorage.getItem(RETRY_STATE_KEY) || '{}');
+      return all[queueItemId] || { count: 0, nextRetryAt: null, lastError: null, permanent: false, blockedBy: null };
+    } catch { return { count: 0, nextRetryAt: null, lastError: null, permanent: false, blockedBy: null }; }
   }
-  function incrementRetry(queueItemId) {
-    const retries = JSON.parse(localStorage.getItem('agrofinca_sync_retries') || '{}');
-    retries[queueItemId] = (retries[queueItemId] || 0) + 1;
-    localStorage.setItem('agrofinca_sync_retries', JSON.stringify(retries));
-    return retries[queueItemId];
+
+  function setRetryState(queueItemId, state) {
+    try {
+      const all = JSON.parse(localStorage.getItem(RETRY_STATE_KEY) || '{}');
+      all[queueItemId] = state;
+      localStorage.setItem(RETRY_STATE_KEY, JSON.stringify(all));
+    } catch {}
   }
-  function clearRetry(queueItemId) {
-    const retries = JSON.parse(localStorage.getItem('agrofinca_sync_retries') || '{}');
-    delete retries[queueItemId];
-    localStorage.setItem('agrofinca_sync_retries', JSON.stringify(retries));
+
+  function clearRetryState(queueItemId) {
+    try {
+      const all = JSON.parse(localStorage.getItem(RETRY_STATE_KEY) || '{}');
+      delete all[queueItemId];
+      localStorage.setItem(RETRY_STATE_KEY, JSON.stringify(all));
+    } catch {}
   }
-  function clearAllRetries() {
-    localStorage.removeItem('agrofinca_sync_retries');
+
+  function clearAllRetryStates() {
+    localStorage.removeItem(RETRY_STATE_KEY);
+  }
+
+  function calculateBackoff(retryCount) {
+    const baseMs = 30000;
+    const delay = baseMs * Math.pow(2, Math.min(retryCount, 5));
+    const jitter = Math.random() * delay * 0.1;
+    return Math.min(delay + jitter, 600000); // cap 10 min
   }
 
   // Tables that sync to Supabase (ordered by dependency - parents first)
@@ -74,7 +90,8 @@ const SyncEngine = (() => {
   // Tables that should NEVER sync (local-only)
   const LOCAL_ONLY_TABLES = [
     'usuarios', 'sync_queue',
-    'user_profiles_local', 'payment_history'
+    'user_profiles_local', 'payment_history',
+    'sync_conflicts', 'sync_log'
   ];
 
   // Fields to ALWAYS strip from ALL tables before pushing to Supabase
@@ -146,8 +163,8 @@ const SyncEngine = (() => {
     onStatusChange = callback;
   }
 
-  function updateStatus(status, pendingCount) {
-    if (onStatusChange) onStatusChange(status, pendingCount);
+  function updateStatus(status, pendingCount, failedCount = 0) {
+    if (onStatusChange) onStatusChange(status, pendingCount, failedCount);
   }
 
   function isOnline() {
@@ -193,41 +210,58 @@ const SyncEngine = (() => {
   // Main sync function
   async function syncAll() {
     if (isSyncing || !isOnline()) return;
-    isSyncing = true;
-    try {
-      updateStatus('syncing', 0);
+    if (!SupabaseClient.hasSession()) return;
 
-      // 0. Refresh token to prevent 401s
-      try {
-        await SupabaseClient.refreshSession();
-      } catch (e) {
-        console.warn('[Sync] Token refresh failed:', e.message);
+    isSyncing = true;
+    updateStatus('syncing', 0);
+
+    try {
+      // Health check — don't waste retries if server unreachable
+      const serverOk = await SupabaseClient.healthCheck();
+      if (!serverOk) {
+        updateStatus('server-unreachable', await AgroDB.getPendingSyncCount());
+        isSyncing = false;
+        return;
       }
 
-      // 1. Fix orphaned records
+      // Refresh token
+      try { await SupabaseClient.refreshSession(); } catch {}
+
+      // Fix orphaned records
       await fixOrphanedRecords();
 
-      // 2. Push local changes to Supabase
-      await pushChanges();
-
-      // 3. Pull remote changes to local
+      // Push then pull
+      const pushResult = await pushChanges();
       await pullChanges();
 
       // Update timestamp
       lastSyncTimestamp = new Date().toISOString();
       localStorage.setItem('agrofinca_last_sync', lastSyncTimestamp);
 
+      // Log cycle
+      await AgroDB.addSyncLogEntry({ type: 'cycle', table: null, record_id: null, result: 'ok', error: null, duration_ms: 0 });
+
+      // Report status
       const pending = await AgroDB.getPendingSyncCount();
-      updateStatus('online', pending);
-      if (pending === 0) {
-        console.log('[Sync] ✅ All synced successfully');
+      const conflicts = await AgroDB.getConflicts(false);
+      const failedCount = getFailedItemCount();
+
+      if (pending === 0 && failedCount === 0) {
+        updateStatus('online', 0, 0);
       } else {
-        console.log(`[Sync] ⚠️ ${pending} items still pending`);
+        updateStatus('online', pending, failedCount);
       }
+
+      // Notify user of new permanent failures
+      if (pushResult.newPermanentFailures > 0 && typeof App !== 'undefined' && App.showToast) {
+        App.showToast(`${pushResult.newPermanentFailures} registro(s) no pudieron sincronizarse`, 'error', 5000);
+      }
+      if (conflicts.length > 0 && typeof App !== 'undefined' && App.showToast) {
+        App.showToast(`${conflicts.length} conflicto(s) de sync detectados`, 'warning', 5000);
+      }
+
     } catch (err) {
-      console.error('[Sync] Error:', err);
-      const pending = await AgroDB.getPendingSyncCount();
-      updateStatus(isOnline() ? 'online' : 'offline', pending);
+      console.error('[Sync] syncAll error:', err);
     } finally {
       isSyncing = false;
     }
@@ -264,18 +298,6 @@ const SyncEngine = (() => {
     return LOCAL_ONLY_TABLES.includes(tableName);
   }
 
-  // Categorize HTTP errors: permanent (4xx) vs transient (5xx/network)
-  function isPermanentError(errorMessage) {
-    if (!errorMessage) return false;
-    const msg = String(errorMessage).toLowerCase();
-    // 400 Bad Request with schema issues = permanent until schema changes
-    if (msg.includes('http 400') || msg.includes('pgrst204') || msg.includes('could not find')) return true;
-    // 404 table not found = permanent
-    if (msg.includes('not found') && msg.includes('404')) return true;
-    // 409 conflict handled by patchRecord fallback, not permanent
-    return false;
-  }
-
   // Fix records created with wrong user ID
   async function fixOrphanedRecords() {
     try {
@@ -305,159 +327,144 @@ const SyncEngine = (() => {
   // Push local unsynced changes to Supabase
   async function pushChanges() {
     const queue = await AgroDB.getSyncQueue();
-    if (queue.length === 0) return 0;
+    if (queue.length === 0) return { newPermanentFailures: 0 };
 
-    let processed = 0;
-    let errors = 0;
-    let skippedPermanent = 0;
-
-    const failedFincaIds = new Set();
-
-    // Group by table
     const byTable = {};
     for (const item of queue) {
       if (!byTable[item.store_name]) byTable[item.store_name] = [];
       byTable[item.store_name].push(item);
     }
 
-    // Process in dependency order
     const orderedTables = [...PUSH_ORDER];
     for (const table of Object.keys(byTable)) {
       if (!orderedTables.includes(table)) orderedTables.push(table);
     }
 
+    let processed = 0, errors = 0, newPermanentFailures = 0;
+    const blockedDeps = new Map(); // parentId -> {table, error}
+
     for (const table of orderedTables) {
       const items = byTable[table];
       if (!items || items.length === 0) continue;
-
-      // Skip local-only tables
-      if (isLocalOnly(table)) {
-        for (const item of items) {
-          await AgroDB.clearSyncQueueItem(item.id);
-          clearRetry(item.id);
-        }
-        processed += items.length;
+      if (LOCAL_ONLY_TABLES.includes(table)) {
+        for (const item of items) await AgroDB.clearSyncQueueItem(item.id);
         continue;
       }
 
-      // Check if any item in this table already hit max retries
-      // If ALL items for a table are permanently failing, log once and skip
-      const allMaxed = items.every(item => getRetryCount(item.id) >= MAX_RETRIES);
-      if (allMaxed) {
-        console.warn(`[Sync] ⏭️ Skipping ${table} (${items.length} items) - all exceeded ${MAX_RETRIES} retries`);
-        skippedPermanent += items.length;
-        continue;
-      }
-
-      console.log(`[Sync] Pushing ${items.length} items for ${table}...`);
-
+      // Collect ready records (not blocked, not waiting for backoff)
+      const readyItems = [];
       for (const item of items) {
-        try {
-          // Check retry limit
-          const retries = getRetryCount(item.id);
-          if (retries >= MAX_RETRIES) {
-            skippedPermanent++;
-            continue;
-          }
+        const state = getRetryState(item.id);
 
-          if (item.action === 'upsert') {
-            const record = await AgroDB.getById(item.store_name, item.record_id);
-            if (!record) {
+        // Skip permanently failed items
+        if (state.permanent) continue;
+
+        // Skip items waiting for backoff
+        if (state.nextRetryAt && new Date(state.nextRetryAt) > new Date()) continue;
+
+        // Skip if retry count exceeded (but don't remove — user decides)
+        if (state.count >= MAX_RETRIES && !state.permanent) {
+          setRetryState(item.id, { ...state, permanent: true, lastError: state.lastError || 'Max retries exceeded' });
+          newPermanentFailures++;
+          continue;
+        }
+
+        // Get record from IndexedDB
+        let record;
+        try { record = await AgroDB.getById(item.store_name, item.record_id); } catch {}
+
+        if (!record) {
+          if (item.action === 'delete') {
+            // Process delete
+            const delStart = Date.now();
+            const result = await SupabaseClient.deleteRecord(table, item.record_id);
+            await AgroDB.addSyncLogEntry({ type: 'push', table, record_id: item.record_id, result: result.ok ? 'ok' : 'error', error: result.ok ? null : result.error, duration_ms: Date.now() - delStart });
+            if (result.ok) {
               await AgroDB.clearSyncQueueItem(item.id);
-              clearRetry(item.id);
-              processed++;
-              continue;
+              clearRetryState(item.id);
             }
-
-            // CASCADE CHECK
-            if (table !== 'fincas' && record.finca_id && failedFincaIds.has(record.finca_id)) {
-              errors++;
-              continue;
-            }
-
-            const clean = cleanRecord(table, record);
-
-            // Debug logging for key tables
-            if (table === 'fincas' || table === 'areas') {
-              console.log(`[Sync] 📤 Pushing ${table}:`, JSON.stringify(clean).substring(0, 300));
-            }
-
-            const result = await SupabaseClient.upsert(table, clean);
-
-            if (result) {
-              await AgroDB.markSynced(item.store_name, item.record_id);
-              await AgroDB.clearSyncQueueItem(item.id);
-              clearRetry(item.id);
-              processed++;
-
-              if (table === 'fincas') {
-                console.log(`[Sync] ✅ Finca synced OK: "${clean.nombre}" (${clean.id}) propietario=${clean.propietario_id}`);
-              }
-            } else {
-              // upsert returned null = server rejected
-              const newRetries = incrementRetry(item.id);
-              errors++;
-
-              if (table === 'fincas') {
-                failedFincaIds.add(record.id);
-                console.error(`[Sync] ❌ FINCA PUSH FAILED for "${record.nombre}" (${record.id}) - retry ${newRetries}/${MAX_RETRIES}`);
-              } else {
-                console.warn(`[Sync] Upsert null for ${table}/${item.record_id} - retry ${newRetries}/${MAX_RETRIES}`);
-              }
-
-              // If max retries reached, clear from queue to stop infinite loop
-              if (newRetries >= MAX_RETRIES) {
-                console.error(`[Sync] 🛑 PERMANENTLY FAILED: ${table}/${item.record_id} after ${MAX_RETRIES} retries - removing from queue`);
-                await AgroDB.clearSyncQueueItem(item.id);
-                clearRetry(item.id);
-              }
-            }
-          } else if (item.action === 'delete') {
-            const result = await SupabaseClient.deleteRecord(item.store_name, item.record_id);
-            if (result) {
-              await AgroDB.clearSyncQueueItem(item.id);
-              clearRetry(item.id);
-              processed++;
-            } else {
-              const newRetries = incrementRetry(item.id);
-              errors++;
-              if (newRetries >= MAX_RETRIES) {
-                await AgroDB.clearSyncQueueItem(item.id);
-                clearRetry(item.id);
-              }
-            }
-          }
-        } catch (err) {
-          const errMsg = err.message || String(err);
-          const newRetries = incrementRetry(item.id);
-          errors++;
-          console.error(`[Sync] Push error ${table}/${item.record_id} (retry ${newRetries}/${MAX_RETRIES}):`, errMsg);
-
-          if (table === 'fincas') {
-            try {
-              const rec = await AgroDB.getById('fincas', item.record_id);
-              if (rec) failedFincaIds.add(rec.id);
-            } catch (_) {}
-          }
-
-          // Permanent errors: clear immediately
-          if (isPermanentError(errMsg) || newRetries >= MAX_RETRIES) {
-            console.error(`[Sync] 🛑 Removing permanently failed item: ${table}/${item.record_id}`);
+          } else {
+            // Record deleted locally — remove from queue
             await AgroDB.clearSyncQueueItem(item.id);
-            clearRetry(item.id);
+            clearRetryState(item.id);
           }
+          continue;
+        }
+
+        // Check if blocked by parent dependency
+        if (table !== 'fincas' && record.finca_id && blockedDeps.has(record.finca_id)) {
+          setRetryState(item.id, { ...getRetryState(item.id), blockedBy: record.finca_id });
+          continue;
+        }
+
+        readyItems.push({ item, record: cleanRecord(table, record) });
+      }
+
+      if (readyItems.length === 0) continue;
+
+      // Try batch upsert first (if >1 record)
+      if (readyItems.length > 1) {
+        const batchStart = Date.now();
+        const batchResult = await SupabaseClient.batchUpsert(table, readyItems.map(r => r.record));
+
+        if (batchResult.ok) {
+          // All succeeded
+          for (const { item } of readyItems) {
+            await AgroDB.markSynced(item.store_name, item.record_id);
+            await AgroDB.clearSyncQueueItem(item.id);
+            clearRetryState(item.id);
+            processed++;
+          }
+          await AgroDB.addSyncLogEntry({ type: 'push', table, record_id: `batch(${readyItems.length})`, result: 'ok', error: null, duration_ms: Date.now() - batchStart });
+          continue;
+        }
+        // Batch failed — fall through to individual upserts
+        console.warn(`[Sync] Batch upsert failed for ${table}, falling back to individual:`, batchResult.error);
+      }
+
+      // Individual upserts
+      for (const { item, record } of readyItems) {
+        const pushStart = Date.now();
+        const result = await SupabaseClient.upsert(table, record);
+        const duration = Date.now() - pushStart;
+
+        if (result.ok) {
+          await AgroDB.markSynced(item.store_name, item.record_id);
+          await AgroDB.clearSyncQueueItem(item.id);
+          clearRetryState(item.id);
+          processed++;
+          await AgroDB.addSyncLogEntry({ type: 'push', table, record_id: item.record_id, result: 'ok', error: null, duration_ms: duration });
+
+          // Unblock children if this was a blocked parent
+          if (table === 'fincas') blockedDeps.delete(record.id);
+
+        } else {
+          errors++;
+          const state = getRetryState(item.id);
+          const newCount = state.count + 1;
+          const backoffMs = calculateBackoff(newCount);
+
+          if (result.permanent || newCount >= MAX_RETRIES) {
+            setRetryState(item.id, { count: newCount, nextRetryAt: null, lastError: result.error, permanent: true, blockedBy: null });
+            newPermanentFailures++;
+            console.error(`[Sync] PERMANENTLY FAILED: ${table}/${item.record_id}: ${result.error}`);
+          } else {
+            setRetryState(item.id, { count: newCount, nextRetryAt: new Date(Date.now() + backoffMs).toISOString(), lastError: result.error, permanent: false, blockedBy: null });
+            console.warn(`[Sync] ${table}/${item.record_id} retry ${newCount}/${MAX_RETRIES} (next in ${Math.round(backoffMs/1000)}s): ${result.error}`);
+          }
+
+          // Track blocked finca for cascade
+          if (table === 'fincas') {
+            blockedDeps.set(record.id, { table, error: result.error });
+          }
+
+          await AgroDB.addSyncLogEntry({ type: 'push', table, record_id: item.record_id, result: 'error', error: result.error, duration_ms: duration });
         }
       }
     }
 
-    if (failedFincaIds.size > 0) {
-      console.warn(`[Sync] ⚠️ ${failedFincaIds.size} finca(s) failed. Child records skipped.`);
-    }
-    if (skippedPermanent > 0) {
-      console.warn(`[Sync] ⏭️ ${skippedPermanent} items skipped (max retries exceeded)`);
-    }
-    console.log(`[Sync] Push complete: ${processed} ok, ${errors} errors, ${skippedPermanent} skipped`);
-    return processed;
+    console.log(`[Sync] Push complete: ${processed} ok, ${errors} errors, ${newPermanentFailures} permanent`);
+    return { newPermanentFailures };
   }
 
   // Pull remote changes to local
@@ -466,22 +473,64 @@ const SyncEngine = (() => {
     const fincaId = App ? App.getCurrentFincaId() : null;
 
     for (const table of SYNC_TABLES) {
+      if (LOCAL_ONLY_TABLES.includes(table)) continue;
+
       try {
+        const pullStart = Date.now();
         const useFilter = TABLES_WITHOUT_FINCA_ID.includes(table) ? null : fincaId;
-        const remoteRecords = await SupabaseClient.getUpdatedSince(table, since, useFilter);
 
-        if (remoteRecords.length > 0) {
-          console.log(`[Sync] Pull: ${remoteRecords.length} updates from ${table}`);
-        }
+        // Pagination loop
+        let allRecords = [];
+        let pageTimestamp = since;
 
-        for (const remote of remoteRecords) {
-          const local = await AgroDB.getById(table, remote.id);
-          if (!local) {
-            await directPut(table, { ...remote, synced: true });
-          } else if (new Date(remote.updated_at) > new Date(local.updated_at)) {
-            await directPut(table, { ...remote, synced: true });
+        while (true) {
+          const result = await SupabaseClient.getUpdatedSince(table, pageTimestamp, useFilter);
+          if (!result.ok) {
+            console.warn(`[Sync] Pull error for ${table}: ${result.error}`);
+            await AgroDB.addSyncLogEntry({ type: 'pull', table, record_id: null, result: 'error', error: result.error, duration_ms: Date.now() - pullStart });
+            break;
           }
+
+          allRecords = allRecords.concat(result.data);
+
+          if (result.data.length < 500) break; // No more pages
+          // Next page starts from last record's updated_at
+          pageTimestamp = result.data[result.data.length - 1].updated_at;
         }
+
+        if (allRecords.length === 0) continue;
+
+        let pulled = 0, conflicts = 0;
+
+        for (const remote of allRecords) {
+          const local = await AgroDB.getById(table, remote.id);
+
+          if (!local) {
+            // New record from server
+            await directPut(table, { ...remote, synced: true });
+            pulled++;
+          } else if (new Date(remote.updated_at) > new Date(local.updated_at)) {
+            // Remote is newer
+            if (local.synced === false) {
+              // CONFLICT: local was modified AND remote is newer
+              await AgroDB.addConflict(table, remote.id, local, remote);
+              conflicts++;
+              // Don't overwrite — let user resolve
+            } else {
+              // No conflict: local was synced, just update
+              await directPut(table, { ...remote, synced: true });
+              pulled++;
+            }
+          }
+          // If local is newer or same, keep local
+        }
+
+        if (pulled > 0 || conflicts > 0) {
+          console.log(`[Sync] Pull ${table}: ${pulled} updated, ${conflicts} conflicts`);
+        }
+
+        await AgroDB.addSyncLogEntry({ type: 'pull', table, record_id: `${pulled}/${conflicts}`, result: conflicts > 0 ? 'conflict' : 'ok', error: null, duration_ms: Date.now() - pullStart });
+
       } catch (err) {
         console.warn(`[Sync] Pull error for ${table}:`, err.message || err);
       }
@@ -537,7 +586,7 @@ const SyncEngine = (() => {
       }
 
       if (requeued > 0) {
-        console.log(`[Sync] ♻️ Re-queued ${requeued} unsynced records that were missing from queue`);
+        console.log(`[Sync] Re-queued ${requeued} unsynced records that were missing from queue`);
       }
     } catch (err) {
       console.warn('[Sync] requeueUnsynced error:', err.message || err);
@@ -545,38 +594,130 @@ const SyncEngine = (() => {
     return requeued;
   }
 
-  // Force full sync (resets timestamp + clears retry counters + re-queues missing items)
+  // Force full sync (resets timestamp + clears retry states + re-queues missing items)
   async function forceSync() {
     lastSyncTimestamp = null;
     localStorage.removeItem('agrofinca_last_sync');
-    clearAllRetries();
-    // Re-queue any records that were removed from sync_queue after max retries
+    clearAllRetryStates();
     await requeueUnsynced();
-    return syncAll();
+    await syncAll();
   }
 
   // Clear all permanently failed items from queue
   async function clearFailedItems() {
     const queue = await AgroDB.getSyncQueue();
     let cleared = 0;
-    for (const item of queue) {
-      if (getRetryCount(item.id) >= MAX_RETRIES) {
-        await AgroDB.clearSyncQueueItem(item.id);
-        clearRetry(item.id);
-        cleared++;
+    try {
+      const all = JSON.parse(localStorage.getItem(RETRY_STATE_KEY) || '{}');
+      for (const item of queue) {
+        if (all[item.id] && all[item.id].permanent) {
+          await AgroDB.clearSyncQueueItem(item.id);
+          clearRetryState(item.id);
+          cleared++;
+        }
       }
-    }
+    } catch {}
     console.log(`[Sync] Cleared ${cleared} permanently failed items`);
     return cleared;
   }
 
+  // Get count of permanently failed items
+  function getFailedItemCount() {
+    try {
+      const all = JSON.parse(localStorage.getItem(RETRY_STATE_KEY) || '{}');
+      return Object.values(all).filter(s => s.permanent).length;
+    } catch { return 0; }
+  }
+
+  // Get detailed list of permanently failed items
+  async function getFailedItems() {
+    try {
+      const all = JSON.parse(localStorage.getItem(RETRY_STATE_KEY) || '{}');
+      const queue = await AgroDB.getSyncQueue();
+      const queueMap = {};
+      for (const item of queue) queueMap[item.id] = item;
+
+      const failed = [];
+      for (const [queueId, state] of Object.entries(all)) {
+        if (!state.permanent) continue;
+        const queueItem = queueMap[queueId];
+        failed.push({
+          queueId,
+          table: queueItem?.store_name || 'unknown',
+          recordId: queueItem?.record_id || 'unknown',
+          error: state.lastError,
+          retries: state.count,
+          permanent: state.permanent
+        });
+      }
+      return failed;
+    } catch { return []; }
+  }
+
+  // Retry a single failed item
+  async function retryItem(queueId) {
+    clearRetryState(queueId);
+    await syncAll();
+  }
+
+  // Retry all permanently failed items
+  async function retryAllFailed() {
+    try {
+      const all = JSON.parse(localStorage.getItem(RETRY_STATE_KEY) || '{}');
+      for (const [id, state] of Object.entries(all)) {
+        if (state.permanent) {
+          all[id] = { ...state, permanent: false, count: 0, nextRetryAt: null };
+        }
+      }
+      localStorage.setItem(RETRY_STATE_KEY, JSON.stringify(all));
+    } catch {}
+    await syncAll();
+  }
+
+  // Dismiss a failed item (remove from queue and retry state)
+  async function dismissItem(queueId) {
+    clearRetryState(queueId);
+    await AgroDB.clearSyncQueueItem(parseInt(queueId));
+  }
+
+  // Get unresolved conflicts
+  async function getConflicts() {
+    return AgroDB.getConflicts(false);
+  }
+
+  // Resolve a conflict (accept 'remote' or 'local')
+  async function resolveConflict(conflictId, resolution) {
+    const conflict = (await AgroDB.getConflicts(false)).find(c => c.id === conflictId);
+    if (!conflict) return;
+
+    if (resolution === 'remote') {
+      // Accept remote version
+      await directPut(conflict.table_name, { ...conflict.remote_data, synced: true });
+    } else if (resolution === 'local') {
+      // Keep local, re-push
+      const local = await AgroDB.getById(conflict.table_name, conflict.record_id);
+      if (local) {
+        local.synced = false;
+        local.updated_at = new Date().toISOString();
+        await AgroDB.addToSyncQueue(conflict.table_name, 'upsert', conflict.record_id);
+      }
+    }
+
+    await AgroDB.resolveConflict(conflictId, resolution);
+  }
+
+  // Get recent sync log entries
+  function getSyncLog(limit = 50) {
+    return AgroDB.getSyncLog(limit);
+  }
+
   // Get sync status info
-  async function getStatus() {
-    const pending = await AgroDB.getPendingSyncCount();
+  function getStatus() {
     return {
       online: isOnline(),
       syncing: isSyncing,
-      pendingCount: pending,
+      pendingCount: 0, // caller should use AgroDB.getPendingSyncCount()
+      failedCount: getFailedItemCount(),
       lastSync: lastSyncTimestamp
     };
   }
@@ -587,9 +728,18 @@ const SyncEngine = (() => {
     stopAutoSync,
     syncAll,
     forceSync,
-    clearFailedItems,
-    getStatus,
     isOnline,
-    SYNC_TABLES
+    SYNC_TABLES,
+    getStatus,
+    clearFailedItems,
+    // New v5 methods
+    getFailedItems,
+    getFailedItemCount,
+    retryItem,
+    retryAllFailed,
+    dismissItem,
+    getConflicts,
+    resolveConflict,
+    getSyncLog,
   };
 })();

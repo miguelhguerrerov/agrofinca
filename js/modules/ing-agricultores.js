@@ -27,13 +27,14 @@ const IngAgricultoresModule = (() => {
 
       if (isOnline && af.agricultor_id) {
         try {
-          const profiles = await SupabaseClient.select('user_profiles', { id: af.agricultor_id });
-          profile = profiles?.[0] || null;
+          const profResult = await SupabaseClient.select('user_profiles', { id: af.agricultor_id });
+          profile = profResult.ok ? (profResult.data[0] || null) : null;
         } catch (e) { console.warn('Could not fetch agricultor profile:', e); }
 
         if (af.estado === 'activo') {
           try {
-            fincas = await SupabaseClient.select('fincas', { propietario_id: af.agricultor_id });
+            const fincasResult = await SupabaseClient.select('fincas', { propietario_id: af.agricultor_id });
+            fincas = fincasResult.ok ? fincasResult.data : [];
           } catch (e) { console.warn('Could not fetch agricultor fincas:', e); }
         }
       }
@@ -45,8 +46,9 @@ const IngAgricultoresModule = (() => {
       if (isOnline && fincas.length > 0) {
         for (const finca of fincas) {
           try {
-            const areas = await SupabaseClient.select('areas', { finca_id: finca.id });
-            superficieTotal += (areas || []).reduce((sum, a) => sum + (a.area_m2 || 0), 0);
+            const areasResult = await SupabaseClient.select('areas', { finca_id: finca.id });
+            const areas = areasResult.ok ? areasResult.data : [];
+            superficieTotal += areas.reduce((sum, a) => sum + (a.area_m2 || 0), 0);
           } catch (e) { /* skip */ }
 
           // Inspections by this engineer are in local DB
@@ -211,9 +213,10 @@ const IngAgricultoresModule = (() => {
 
       // Search on SERVER (not local DB — other users aren't in local IndexedDB)
       try {
-        const profiles = await SupabaseClient.select('user_profiles', { email: emailValue });
+        const profResult = await SupabaseClient.select('user_profiles', { email: emailValue });
+        const profiles = profResult.ok ? profResult.data : [];
 
-        if (profiles && profiles.length > 0) {
+        if (profiles.length > 0) {
           foundUserId = profiles[0].id;
           const nombre = profiles[0].nombre || profiles[0].full_name || profiles[0].email;
           const rol = profiles[0].rol || 'agricultor';
@@ -287,11 +290,12 @@ const IngAgricultoresModule = (() => {
     let fincas = [];
     if (isOnline) {
       try {
-        const profiles = await SupabaseClient.select('user_profiles', { id: agricultorId });
-        profile = profiles?.[0] || null;
+        const profResult = await SupabaseClient.select('user_profiles', { id: agricultorId });
+        profile = profResult.ok ? (profResult.data[0] || null) : null;
       } catch (e) { console.warn('Could not fetch profile:', e); }
       try {
-        fincas = await SupabaseClient.select('fincas', { propietario_id: agricultorId });
+        const fincasResult = await SupabaseClient.select('fincas', { propietario_id: agricultorId });
+        fincas = fincasResult.ok ? fincasResult.data : [];
       } catch (e) { console.warn('Could not fetch fincas:', e); }
     }
 
@@ -305,7 +309,8 @@ const IngAgricultoresModule = (() => {
       let areas = [];
       if (isOnline) {
         try {
-          areas = await SupabaseClient.select('areas', { finca_id: finca.id });
+          const areasResult = await SupabaseClient.select('areas', { finca_id: finca.id });
+          areas = areasResult.ok ? areasResult.data : [];
         } catch (e) { areas = []; }
       }
       fincaAreas[finca.id] = areas;
@@ -482,20 +487,23 @@ const IngAgricultoresModule = (() => {
 
     if (isOnline) {
       try {
-        const fincas = await SupabaseClient.select('fincas', { id: fincaId });
-        finca = fincas?.[0] || null;
+        const fincasResult = await SupabaseClient.select('fincas', { id: fincaId });
+        finca = fincasResult.ok ? (fincasResult.data[0] || null) : null;
       } catch (e) { /* skip */ }
       try {
-        areas = await SupabaseClient.select('areas', { finca_id: fincaId });
+        const areasResult = await SupabaseClient.select('areas', { finca_id: fincaId });
+        areas = areasResult.ok ? areasResult.data : [];
       } catch (e) { areas = []; }
       try {
-        const allCiclos = await SupabaseClient.select('ciclos_productivos', { finca_id: fincaId });
-        ciclos = (allCiclos || []).filter(c => c.estado === 'activo');
+        const ciclosResult = await SupabaseClient.select('ciclos_productivos', { finca_id: fincaId });
+        const allCiclos = ciclosResult.ok ? ciclosResult.data : [];
+        ciclos = allCiclos.filter(c => c.estado === 'activo');
       } catch (e) { ciclos = []; }
       try {
         const month = DateUtils.currentMonthRange();
-        const allCosechas = await SupabaseClient.select('cosechas', { finca_id: fincaId });
-        cosechas = (allCosechas || []).filter(c => c.fecha >= month.start && c.fecha <= month.end);
+        const cosechasResult = await SupabaseClient.select('cosechas', { finca_id: fincaId });
+        const allCosechas = cosechasResult.ok ? cosechasResult.data : [];
+        cosechas = allCosechas.filter(c => c.fecha >= month.start && c.fecha <= month.end);
       } catch (e) { cosechas = []; }
     }
 

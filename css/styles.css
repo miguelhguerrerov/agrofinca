@@ -1773,6 +1773,28 @@ details summary:hover {
   50% { transform: scale(1.15); }
 }
 
+/* Sync Engine v5 Diagnostics */
+.sync-dot.unreachable { background: var(--amber-500); }
+.sync-dot.has-errors { background: var(--red-500); animation: pulse 2s infinite; }
+.sync-dot.has-conflicts { background: var(--amber-500); }
+.sync-dot.pending { background: var(--green-500); }
+.sync-dot.synced { background: var(--green-500); }
+#sync-status { cursor: pointer; }
+#sync-status:hover { opacity: 0.8; }
+
+.sync-diag-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.sync-diag-table th { text-align: left; padding: 0.5rem; border-bottom: 2px solid var(--gray-200); font-weight: 600; }
+.sync-diag-table td { padding: 0.5rem; border-bottom: 1px solid var(--gray-100); vertical-align: top; }
+.sync-diag-table .error-text { color: var(--red-500); font-size: 0.78rem; max-width: 200px; word-break: break-word; }
+
+.conflict-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.75rem; }
+.conflict-local { padding: 0.75rem; border-radius: var(--radius); background: var(--blue-50); border: 1px solid var(--blue-200); }
+.conflict-remote { padding: 0.75rem; border-radius: var(--radius); background: var(--green-50); border: 1px solid var(--green-200); }
+
+@media (max-width: 768px) {
+  .conflict-diff { grid-template-columns: 1fr; }
+}
+
 /* --- Print styles --- */
 @media print {
   .top-bar, .bottom-nav, .sidebar, .fab, .action-sheet { display: none !important; }

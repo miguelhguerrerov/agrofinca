@@ -993,7 +993,8 @@ const FincasModule = (() => {
 
       try {
         if (SyncEngine.isOnline() && SupabaseClient.hasSession()) {
-          const profiles = await SupabaseClient.select('user_profiles', { email });
+          const profResult = await SupabaseClient.select('user_profiles', { email });
+          const profiles = profResult.ok ? profResult.data : [];
           if (profiles.length > 0) {
             foundUserId = profiles[0].id;
             foundNombre = profiles[0].nombre || '';

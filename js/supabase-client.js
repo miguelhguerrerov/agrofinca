@@ -128,24 +128,29 @@ const SupabaseClient = (() => {
   }
 
   // REST API calls (for sync)
+  // Convention: all REST methods return {ok, data} or {ok, error, code, permanent}
   async function select(table, filters = {}) {
-    if (!accessToken) return [];
+    if (!accessToken) return {ok: true, data: []};
     let url = `${SUPABASE_URL}/rest/v1/${table}?select=*`;
     for (const [key, value] of Object.entries(filters)) {
       url += `&${key}=eq.${encodeURIComponent(value)}`;
     }
     try {
       const res = await fetch(url, { headers: getHeaders() });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
+      if (res.ok) {
+        const records = await res.json();
+        return {ok: true, data: records};
+      }
+      const errText = await res.text().catch(() => res.statusText);
+      const permanent = res.status >= 400 && res.status < 500;
+      return {ok: false, error: `HTTP ${res.status}: ${errText}`, code: res.status, permanent};
     } catch (err) {
-      console.warn('Supabase select error:', err);
-      return [];
+      return {ok: false, error: err.message, code: null, permanent: false};
     }
   }
 
   async function upsert(table, record) {
-    if (!accessToken) return null;
+    if (!accessToken) return {ok: false, error: 'No session', code: null, permanent: false};
     try {
       const headers = getHeaders();
       headers['Prefer'] = 'resolution=merge-duplicates,return=representation';
@@ -154,69 +159,70 @@ const SupabaseClient = (() => {
         headers,
         body: JSON.stringify(record)
       });
-      if (!res.ok) {
-        const errText = await res.text();
-        // Log detailed error for debugging
-        console.error(`[Supabase] Upsert ${table} failed (${res.status}):`, errText);
-        // If table doesn't exist (404) or permission denied (403/401), throw to let caller handle
-        if (res.status === 404) {
-          throw new Error(`Table '${table}' not found in Supabase (404)`);
-        }
-        if (res.status === 401 || res.status === 403) {
-          throw new Error(`Permission denied for '${table}' (${res.status}): ${errText}`);
-        }
-        // For 409 conflict, try PATCH instead (some RLS configs block POST for existing records)
-        if (res.status === 409) {
-          return await patchRecord(table, record);
-        }
-        throw new Error(`HTTP ${res.status}: ${errText}`);
+      if (res.ok) {
+        const data = await res.json();
+        return {ok: true, data: data[0] || record};
       }
-      const data = await res.json();
-      return data[0] || record;
+      const errText = await res.text().catch(() => res.statusText);
+      if (res.status === 400) {
+        return {ok: false, error: errText, code: 400, permanent: true};
+      }
+      if (res.status === 401 || res.status === 403) {
+        return {ok: false, error: 'Permission denied: ' + errText, code: res.status, permanent: true};
+      }
+      if (res.status === 404) {
+        return {ok: false, error: 'Table not found', code: 404, permanent: true};
+      }
+      // For 409 conflict, try PATCH instead (some RLS configs block POST for existing records)
+      if (res.status === 409) {
+        return await patchRecord(table, record);
+      }
+      // 5xx server errors
+      return {ok: false, error: errText, code: res.status, permanent: false};
     } catch (err) {
-      console.error(`[Supabase] Upsert error (${table}):`, err.message || err);
-      return null;
+      return {ok: false, error: err.message, code: null, permanent: false};
     }
   }
 
   // Fallback: PATCH existing record
   async function patchRecord(table, record) {
-    if (!record.id) return null;
+    if (!record.id) return {ok: false, error: 'Record has no id', code: null, permanent: true};
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${record.id}`, {
         method: 'PATCH',
         headers: getHeaders(),
         body: JSON.stringify(record)
       });
-      if (!res.ok) {
-        console.warn(`[Supabase] Patch ${table} failed (${res.status})`);
-        return null;
+      if (res.ok) {
+        const data = await res.json();
+        if (!data || data.length === 0) {
+          return {ok: false, error: 'Record not found on server', code: 200, permanent: false};
+        }
+        return {ok: true, data: data[0]};
       }
-      const data = await res.json();
-      // IMPORTANT: If no rows matched (empty array), the record was NOT updated
-      // Return null so the caller knows it didn't actually sync
-      if (!data || data.length === 0) {
-        console.warn(`[Supabase] Patch ${table}/${record.id}: no rows matched (record not in Supabase)`);
-        return null;
-      }
-      return data[0];
+      const errText = await res.text().catch(() => res.statusText);
+      const permanent = res.status >= 400 && res.status < 500;
+      return {ok: false, error: `HTTP ${res.status}: ${errText}`, code: res.status, permanent};
     } catch (err) {
-      console.warn(`[Supabase] Patch ${table} error:`, err.message);
-      return null;
+      return {ok: false, error: err.message, code: null, permanent: false};
     }
   }
 
   async function deleteRecord(table, id) {
-    if (!accessToken) return false;
+    if (!accessToken) return {ok: false, error: 'No session', code: null, permanent: false};
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
         method: 'DELETE',
         headers: getHeaders()
       });
-      return res.ok;
+      if (res.ok) {
+        return {ok: true, data: null};
+      }
+      const errText = await res.text().catch(() => res.statusText);
+      const permanent = res.status >= 400 && res.status < 500;
+      return {ok: false, error: `HTTP ${res.status}: ${errText}`, code: res.status, permanent};
     } catch (err) {
-      console.warn('Supabase delete error:', err);
-      return false;
+      return {ok: false, error: err.message, code: null, permanent: false};
     }
   }
 
@@ -245,7 +251,7 @@ const SupabaseClient = (() => {
   // fincaId is optional - only added if the table has a finca_id column
   // The caller (SyncEngine) is responsible for NOT passing fincaId for tables like 'fincas'
   async function getUpdatedSince(table, since, fincaId) {
-    if (!accessToken) return [];
+    if (!accessToken) return {ok: true, data: []};
     let url = `${SUPABASE_URL}/rest/v1/${table}?select=*&updated_at=gte.${encodeURIComponent(since)}`;
     if (fincaId) {
       url += `&finca_id=eq.${fincaId}`;
@@ -253,15 +259,15 @@ const SupabaseClient = (() => {
     url += '&order=updated_at.asc&limit=500';
     try {
       const res = await fetch(url, { headers: getHeaders() });
-      if (!res.ok) {
-        const errText = await res.text();
-        console.warn(`[Supabase] Pull ${table} failed (${res.status}):`, errText);
-        return [];
+      if (res.ok) {
+        const records = await res.json();
+        return {ok: true, data: records};
       }
-      return await res.json();
+      const errText = await res.text().catch(() => res.statusText);
+      const permanent = res.status < 500;
+      return {ok: false, error: errText, code: res.status, permanent};
     } catch (err) {
-      console.warn(`[Supabase] Pull ${table} network error:`, err.message);
-      return [];
+      return {ok: false, error: err.message, code: null, permanent: false};
     }
   }
 
@@ -399,6 +405,46 @@ const SupabaseClient = (() => {
     }
   }
 
+  async function healthCheck() {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+        method: 'HEAD',
+        headers: { 'apikey': SUPABASE_ANON_KEY },
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      return res.ok || res.status === 404 || res.status === 400; // Server is responding
+    } catch {
+      return false;
+    }
+  }
+
+  async function batchUpsert(table, records) {
+    if (!records || records.length === 0) return {ok: true, data: []};
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+        method: 'POST',
+        headers: {
+          ...getHeaders(),
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=representation'
+        },
+        body: JSON.stringify(records) // Array body for bulk
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return {ok: true, data};
+      }
+      const errText = await res.text().catch(() => res.statusText);
+      const permanent = res.status >= 400 && res.status < 500 && res.status !== 409;
+      return {ok: false, error: `HTTP ${res.status}: ${errText}`, code: res.status, permanent};
+    } catch (err) {
+      return {ok: false, error: err.message, code: null, permanent: false};
+    }
+  }
+
   return {
     signUp,
     signIn,
@@ -415,6 +461,8 @@ const SupabaseClient = (() => {
     callEdgeFunction,
     getUserProfile,
     upsertUserProfile,
+    healthCheck,
+    batchUpsert,
     connectRealtime,
     subscribeToChat,
     unsubscribeChat,

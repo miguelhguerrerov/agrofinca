@@ -13,7 +13,8 @@ const MiTecnicoModule = (() => {
     let allAfiliaciones = [];
     if (isOnline) {
       try {
-        allAfiliaciones = await SupabaseClient.select('ingeniero_agricultores', { agricultor_id: userId }) || [];
+        const afResult = await SupabaseClient.select('ingeniero_agricultores', { agricultor_id: userId });
+        allAfiliaciones = afResult.ok ? afResult.data : [];
         // Also save to local for offline use
         for (const af of allAfiliaciones) {
           try {
@@ -42,9 +43,9 @@ const MiTecnicoModule = (() => {
       let ingNombre = p.notas || 'Ingeniero';
       if (isOnline && p.ingeniero_id) {
         try {
-          const profiles = await SupabaseClient.select('user_profiles', { id: p.ingeniero_id });
-          if (profiles?.[0]) {
-            ingNombre = profiles[0].nombre || profiles[0].full_name || profiles[0].email || ingNombre;
+          const profResult = await SupabaseClient.select('user_profiles', { id: p.ingeniero_id });
+          if (profResult.ok && profResult.data[0]) {
+            ingNombre = profResult.data[0].nombre || profResult.data[0].full_name || profResult.data[0].email || ingNombre;
           }
         } catch (e) { /* use fallback name */ }
       }
@@ -92,7 +93,8 @@ const MiTecnicoModule = (() => {
       let profile = null;
       if (isOnline) {
         try {
-          const profiles = await SupabaseClient.select('user_profiles', { id: af.ingeniero_id });
+          const profResult2 = await SupabaseClient.select('user_profiles', { id: af.ingeniero_id });
+          const profiles = profResult2.ok ? profResult2.data : [];
           profile = profiles?.[0] || null;
         } catch (e) { /* skip */ }
       }

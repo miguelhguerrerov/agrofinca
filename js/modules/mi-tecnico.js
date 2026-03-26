@@ -7,26 +7,79 @@ const MiTecnicoModule = (() => {
 
   async function render(container, fincaId) {
     const userId = AuthModule.getUserId();
+    const isOnline = SyncEngine.isOnline() && SupabaseClient.hasSession();
+
+    // Check for PENDING affiliation requests first
+    const pendientes = await AgroDB.query('ingeniero_agricultores',
+      r => r.agricultor_id === userId && r.estado === 'pendiente');
+
+    // Resolve engineer names for pending requests (from server since other user's profile)
+    const pendientesData = [];
+    for (const p of pendientes) {
+      let ingNombre = p.notas || 'Ingeniero';
+      if (isOnline && p.ingeniero_id) {
+        try {
+          const profiles = await SupabaseClient.select('user_profiles', { id: p.ingeniero_id });
+          if (profiles?.[0]) {
+            ingNombre = profiles[0].nombre || profiles[0].full_name || profiles[0].email || ingNombre;
+          }
+        } catch (e) { /* use fallback name */ }
+      }
+      pendientesData.push({ id: p.id, nombre: ingNombre, fecha: p.fecha_afiliacion });
+    }
 
     // Find affiliated engineer(s)
     const afiliaciones = await AgroDB.query('ingeniero_agricultores',
       r => r.agricultor_id === userId && r.estado === 'activo');
 
-    if (afiliaciones.length === 0) {
+    if (afiliaciones.length === 0 && pendientesData.length === 0) {
       container.innerHTML = `
-        <div class="page-header"><h2>👨‍🔬 Mi Técnico</h2></div>
+        <div class="page-header"><h2>Mi Tecnico</h2></div>
         <div class="empty-state">
           <div class="empty-icon">🔬</div>
-          <h3>Sin técnico afiliado</h3>
-          <p>Aún no tienes un ingeniero agrónomo vinculado a tu cuenta. Cuando un técnico te afilie, podrás ver sus visitas, inspecciones y recomendaciones aquí.</p>
+          <h3>Sin tecnico afiliado</h3>
+          <p>Aun no tienes un ingeniero agronomo vinculado a tu cuenta. Cuando un tecnico te afilie, podras ver sus visitas, inspecciones y recomendaciones aqui.</p>
         </div>`;
       return;
     }
 
-    // Get engineer profiles
+    // Build pending requests HTML
+    let pendingHTML = '';
+    if (pendientesData.length > 0) {
+      pendingHTML = pendientesData.map(p => `
+        <div class="card" style="border:2px solid var(--amber-500);background:var(--amber-50);margin-bottom:1rem;">
+          <h3 style="margin:0 0 0.5rem 0;">Solicitud de afiliacion</h3>
+          <p style="margin:0 0 0.75rem 0;">El Ing. <strong>${p.nombre}</strong> quiere afiliarse como tu tecnico agronomo.</p>
+          <div class="form-row" style="gap:0.5rem;">
+            <button class="btn btn-primary btn-sm btn-aceptar-afiliacion" data-afiliacion-id="${p.id}">Aceptar</button>
+            <button class="btn btn-outline btn-sm btn-rechazar-afiliacion" data-afiliacion-id="${p.id}">Rechazar</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // If only pending (no active), show pending section and return
+    if (afiliaciones.length === 0) {
+      container.innerHTML = `
+        <div class="page-header"><h2>Mi Tecnico</h2></div>
+        ${pendingHTML}`;
+      bindPendingButtons(container, fincaId);
+      return;
+    }
+
+    // Get engineer profiles (from server)
     const ingenieros = [];
     for (const af of afiliaciones) {
-      const profile = await AgroDB.getById('user_profiles', af.ingeniero_id);
+      let profile = null;
+      if (isOnline) {
+        try {
+          const profiles = await SupabaseClient.select('user_profiles', { id: af.ingeniero_id });
+          profile = profiles?.[0] || null;
+        } catch (e) { /* skip */ }
+      }
+      if (!profile) {
+        profile = await AgroDB.getById('user_profiles', af.ingeniero_id);
+      }
       if (profile) ingenieros.push({ ...profile, afiliacion: af });
     }
 
@@ -78,8 +131,10 @@ const MiTecnicoModule = (() => {
     // Build tabs HTML
     container.innerHTML = `
       <div class="page-header">
-        <h2>👨‍🔬 Mi Técnico</h2>
+        <h2>Mi Tecnico</h2>
       </div>
+
+      ${pendingHTML}
 
       <!-- Engineer info card -->
       ${ingenieros.map(ing => `
@@ -202,6 +257,42 @@ const MiTecnicoModule = (() => {
         tab.classList.add('active');
         const panel = document.getElementById(`mi-tec-${tab.dataset.tab}`);
         if (panel) panel.style.display = 'block';
+      });
+    });
+
+    // Bind pending affiliation buttons
+    bindPendingButtons(container, fincaId);
+  }
+
+  function bindPendingButtons(container, fincaId) {
+    container.querySelectorAll('.btn-aceptar-afiliacion').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const afId = btn.dataset.afiliacionId;
+        try {
+          await AgroDB.update('ingeniero_agricultores', afId, {
+            estado: 'activo',
+            fecha_afiliacion: new Date().toISOString()
+          });
+          App.showToast('Afiliacion aceptada', 'success');
+          render(container, fincaId);
+        } catch (e) {
+          App.showToast('Error al aceptar: ' + e.message, 'error');
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-rechazar-afiliacion').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const afId = btn.dataset.afiliacionId;
+        try {
+          await AgroDB.update('ingeniero_agricultores', afId, {
+            estado: 'rechazado'
+          });
+          App.showToast('Afiliacion rechazada', 'info');
+          render(container, fincaId);
+        } catch (e) {
+          App.showToast('Error al rechazar: ' + e.message, 'error');
+        }
       });
     });
   }

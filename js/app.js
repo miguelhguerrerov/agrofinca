@@ -183,16 +183,16 @@ const App = (() => {
     const bottomNav = document.getElementById('bottom-nav');
     if (bottomNav) bottomNav.style.display = isIng ? 'none' : '';
 
-    // Hide section headers for ingeniero
+    // Hide section headers for ingeniero (actual class is nav-divider, not nav-section-title)
     if (isIng) {
-      document.querySelectorAll('.nav-section-title').forEach(el => {
+      document.querySelectorAll('.nav-divider').forEach(el => {
         const text = el.textContent?.trim().toUpperCase();
-        if (['PRODUCCIÓN', 'ACTIVIDADES ESPECIALES', 'FINANZAS', 'PLANIFICACIÓN'].includes(text)) {
+        if (['PRODUCCIÓN', 'PRODUCCION', 'ACTIVIDADES ESPECIALES', 'FINANZAS', 'PLANIFICACIÓN', 'PLANIFICACION', 'MI TÉCNICO', 'MI TECNICO'].includes(text)) {
           el.style.display = 'none';
         }
       });
     } else {
-      document.querySelectorAll('.nav-section-title').forEach(el => el.style.display = '');
+      document.querySelectorAll('.nav-divider').forEach(el => el.style.display = '');
     }
   }
 

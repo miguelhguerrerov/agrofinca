@@ -1454,3 +1454,88 @@ DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE chat_mensajes;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- ───────────────────────────────────────────────────────────────
+-- v4.1: RLS policies for affiliated engineers to read agricultor data
+-- Engineers with estado='activo' affiliation can read fincas, areas,
+-- ciclos, cosechas, inspecciones, aplicaciones, tareas, cultivos
+-- ───────────────────────────────────────────────────────────────
+
+-- Allow affiliated engineers to see their agricultors' fincas
+DROP POLICY IF EXISTS "fincas_ingeniero_select" ON fincas;
+CREATE POLICY "fincas_ingeniero_select" ON fincas FOR SELECT USING (
+  propietario_id IN (
+    SELECT agricultor_id FROM ingeniero_agricultores
+    WHERE ingeniero_id = auth.uid() AND estado = 'activo'
+  )
+);
+
+-- Allow affiliated engineers to read areas of their agricultors' fincas
+DROP POLICY IF EXISTS "areas_ingeniero_select" ON areas;
+CREATE POLICY "areas_ingeniero_select" ON areas FOR SELECT USING (
+  finca_id IN (
+    SELECT f.id FROM fincas f
+    JOIN ingeniero_agricultores ia ON ia.agricultor_id = f.propietario_id
+    WHERE ia.ingeniero_id = auth.uid() AND ia.estado = 'activo'
+  )
+);
+
+-- Allow affiliated engineers to read ciclos_productivos
+DROP POLICY IF EXISTS "ciclos_ingeniero_select" ON ciclos_productivos;
+CREATE POLICY "ciclos_ingeniero_select" ON ciclos_productivos FOR SELECT USING (
+  finca_id IN (
+    SELECT f.id FROM fincas f
+    JOIN ingeniero_agricultores ia ON ia.agricultor_id = f.propietario_id
+    WHERE ia.ingeniero_id = auth.uid() AND ia.estado = 'activo'
+  )
+);
+
+-- Allow affiliated engineers to read cosechas
+DROP POLICY IF EXISTS "cosechas_ingeniero_select" ON cosechas;
+CREATE POLICY "cosechas_ingeniero_select" ON cosechas FOR SELECT USING (
+  finca_id IN (
+    SELECT f.id FROM fincas f
+    JOIN ingeniero_agricultores ia ON ia.agricultor_id = f.propietario_id
+    WHERE ia.ingeniero_id = auth.uid() AND ia.estado = 'activo'
+  )
+);
+
+-- Allow affiliated engineers to read inspecciones
+DROP POLICY IF EXISTS "inspecciones_ingeniero_select" ON inspecciones;
+CREATE POLICY "inspecciones_ingeniero_select" ON inspecciones FOR SELECT USING (
+  finca_id IN (
+    SELECT f.id FROM fincas f
+    JOIN ingeniero_agricultores ia ON ia.agricultor_id = f.propietario_id
+    WHERE ia.ingeniero_id = auth.uid() AND ia.estado = 'activo'
+  )
+);
+
+-- Allow affiliated engineers to read aplicaciones_fitosanitarias
+DROP POLICY IF EXISTS "aplicaciones_ingeniero_select" ON aplicaciones_fitosanitarias;
+CREATE POLICY "aplicaciones_ingeniero_select" ON aplicaciones_fitosanitarias FOR SELECT USING (
+  finca_id IN (
+    SELECT f.id FROM fincas f
+    JOIN ingeniero_agricultores ia ON ia.agricultor_id = f.propietario_id
+    WHERE ia.ingeniero_id = auth.uid() AND ia.estado = 'activo'
+  )
+);
+
+-- Allow affiliated engineers to read tareas
+DROP POLICY IF EXISTS "tareas_ingeniero_select" ON tareas;
+CREATE POLICY "tareas_ingeniero_select" ON tareas FOR SELECT USING (
+  finca_id IN (
+    SELECT f.id FROM fincas f
+    JOIN ingeniero_agricultores ia ON ia.agricultor_id = f.propietario_id
+    WHERE ia.ingeniero_id = auth.uid() AND ia.estado = 'activo'
+  )
+);
+
+-- Allow affiliated engineers to read cultivos_catalogo (shared reference data)
+DROP POLICY IF EXISTS "cultivos_ingeniero_select" ON cultivos_catalogo;
+CREATE POLICY "cultivos_ingeniero_select" ON cultivos_catalogo FOR SELECT USING (
+  finca_id IN (
+    SELECT f.id FROM fincas f
+    JOIN ingeniero_agricultores ia ON ia.agricultor_id = f.propietario_id
+    WHERE ia.ingeniero_id = auth.uid() AND ia.estado = 'activo'
+  )
+);

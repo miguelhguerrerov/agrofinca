@@ -17,36 +17,56 @@ const IngAgricultoresModule = (() => {
       r => r.ingeniero_id === userId
     );
 
-    // Load profiles and finca data for each agricultor
+    // Load profiles and finca data for each agricultor (from SERVER, not local IndexedDB)
     const agricultoresData = [];
+    const isOnline = SyncEngine.isOnline() && SupabaseClient.hasSession();
+
     for (const af of afiliaciones) {
-      const profile = await AgroDB.getById('user_profiles', af.agricultor_id);
-      const fincas = await AgroDB.getByIndex('fincas', 'propietario_id', af.agricultor_id);
+      let profile = null;
+      let fincas = [];
+
+      if (isOnline && af.agricultor_id) {
+        try {
+          const profiles = await SupabaseClient.select('user_profiles', { id: af.agricultor_id });
+          profile = profiles?.[0] || null;
+        } catch (e) { console.warn('Could not fetch agricultor profile:', e); }
+
+        if (af.estado === 'activo') {
+          try {
+            fincas = await SupabaseClient.select('fincas', { propietario_id: af.agricultor_id });
+          } catch (e) { console.warn('Could not fetch agricultor fincas:', e); }
+        }
+      }
 
       let superficieTotal = 0;
       let totalInspecciones = 0;
       let ultimaVisita = null;
 
-      for (const finca of fincas) {
-        const areas = await AgroDB.getByIndex('areas', 'finca_id', finca.id);
-        superficieTotal += areas.reduce((sum, a) => sum + (a.area_m2 || 0), 0);
+      if (isOnline && fincas.length > 0) {
+        for (const finca of fincas) {
+          try {
+            const areas = await SupabaseClient.select('areas', { finca_id: finca.id });
+            superficieTotal += (areas || []).reduce((sum, a) => sum + (a.area_m2 || 0), 0);
+          } catch (e) { /* skip */ }
 
-        const inspecciones = await AgroDB.query('inspecciones',
-          r => r.finca_id === finca.id && r.ingeniero_id === userId
-        );
-        totalInspecciones += inspecciones.length;
+          // Inspections by this engineer are in local DB
+          const inspecciones = await AgroDB.query('inspecciones',
+            r => r.finca_id === finca.id && r.ingeniero_id === userId
+          );
+          totalInspecciones += inspecciones.length;
 
-        inspecciones.forEach(i => {
-          if (!ultimaVisita || i.fecha > ultimaVisita) ultimaVisita = i.fecha;
-        });
+          inspecciones.forEach(i => {
+            if (!ultimaVisita || i.fecha > ultimaVisita) ultimaVisita = i.fecha;
+          });
+        }
       }
 
       agricultoresData.push({
         id: af.agricultor_id,
         afiliacionId: af.id,
         estado: af.estado || 'activo',
-        nombre: profile ? (profile.nombre || profile.full_name || profile.email) : (af.email || 'Sin nombre'),
-        email: profile ? profile.email : (af.email || ''),
+        nombre: profile ? (profile.nombre || profile.full_name || profile.email) : (af.notas || 'Sin nombre'),
+        email: profile ? profile.email : '',
         fincas: fincas.length,
         superficie: superficieTotal / 10000,
         inspecciones: totalInspecciones,
@@ -222,7 +242,7 @@ const IngAgricultoresModule = (() => {
       try {
         // Check if affiliation already exists
         const existing = await AgroDB.query('ingeniero_agricultores',
-          r => r.ingeniero_id === userId && (r.agricultor_id === foundUserId || r.email === emailValue)
+          r => r.ingeniero_id === userId && r.agricultor_id === foundUserId
         );
 
         if (existing.length > 0) {
@@ -231,14 +251,17 @@ const IngAgricultoresModule = (() => {
           return;
         }
 
+        if (!foundUserId) {
+          App.showToast('El agricultor debe estar registrado en el sistema para afiliarlo', 'warning');
+          return;
+        }
+
         const record = {
           ingeniero_id: userId,
-          agricultor_id: foundUserId || null,
-          email: emailValue,
-          nombre_referencia: nombre || null,
-          estado: foundUserId ? 'pendiente' : 'pendiente',
-          fecha_afiliacion: DateUtils.today(),
-          created_at: new Date().toISOString()
+          agricultor_id: foundUserId,
+          estado: 'pendiente',
+          fecha_afiliacion: new Date().toISOString(),
+          notas: nombre || emailValue
         };
 
         await AgroDB.add('ingeniero_agricultores', record);
@@ -258,8 +281,19 @@ const IngAgricultoresModule = (() => {
   // =============================================
   async function showFichaAgricultor(agricultorId, parentContainer) {
     const userId = AuthModule.getUserId();
-    const profile = await AgroDB.getById('user_profiles', agricultorId);
-    const fincas = await AgroDB.getByIndex('fincas', 'propietario_id', agricultorId);
+    const isOnline = SyncEngine.isOnline() && SupabaseClient.hasSession();
+
+    let profile = null;
+    let fincas = [];
+    if (isOnline) {
+      try {
+        const profiles = await SupabaseClient.select('user_profiles', { id: agricultorId });
+        profile = profiles?.[0] || null;
+      } catch (e) { console.warn('Could not fetch profile:', e); }
+      try {
+        fincas = await SupabaseClient.select('fincas', { propietario_id: agricultorId });
+      } catch (e) { console.warn('Could not fetch fincas:', e); }
+    }
 
     // Load inspecciones by this ingeniero on agricultor's fincas
     let allInspecciones = [];
@@ -268,7 +302,12 @@ const IngAgricultoresModule = (() => {
     const fincaAreas = {};
 
     for (const finca of fincas) {
-      const areas = await AgroDB.getByIndex('areas', 'finca_id', finca.id);
+      let areas = [];
+      if (isOnline) {
+        try {
+          areas = await SupabaseClient.select('areas', { finca_id: finca.id });
+        } catch (e) { areas = []; }
+      }
       fincaAreas[finca.id] = areas;
 
       const inspecciones = await AgroDB.query('inspecciones',
@@ -434,17 +473,36 @@ const IngAgricultoresModule = (() => {
   // =============================================
   async function showFincaAfiliada(fincaId, agricultorId, parentContainer) {
     const userId = AuthModule.getUserId();
-    const finca = await AgroDB.getById('fincas', fincaId);
+    const isOnline = SyncEngine.isOnline() && SupabaseClient.hasSession();
+
+    let finca = null;
+    let areas = [];
+    let ciclos = [];
+    let cosechas = [];
+
+    if (isOnline) {
+      try {
+        const fincas = await SupabaseClient.select('fincas', { id: fincaId });
+        finca = fincas?.[0] || null;
+      } catch (e) { /* skip */ }
+      try {
+        areas = await SupabaseClient.select('areas', { finca_id: fincaId });
+      } catch (e) { areas = []; }
+      try {
+        const allCiclos = await SupabaseClient.select('ciclos_productivos', { finca_id: fincaId });
+        ciclos = (allCiclos || []).filter(c => c.estado === 'activo');
+      } catch (e) { ciclos = []; }
+      try {
+        const month = DateUtils.currentMonthRange();
+        const allCosechas = await SupabaseClient.select('cosechas', { finca_id: fincaId });
+        cosechas = (allCosechas || []).filter(c => c.fecha >= month.start && c.fecha <= month.end);
+      } catch (e) { cosechas = []; }
+    }
+
     if (!finca) {
       App.showToast('Finca no encontrada', 'error');
       return;
     }
-
-    const areas = await AgroDB.getByIndex('areas', 'finca_id', fincaId);
-    const ciclos = await AgroDB.query('ciclos_productivos', r => r.finca_id === fincaId && r.estado === 'activo');
-
-    const month = DateUtils.currentMonthRange();
-    const cosechas = await AgroDB.query('cosechas', r => r.finca_id === fincaId && r.fecha >= month.start && r.fecha <= month.end);
 
     const inspecciones = await AgroDB.query('inspecciones',
       r => r.finca_id === fincaId && r.ingeniero_id === userId

@@ -9,9 +9,32 @@ const MiTecnicoModule = (() => {
     const userId = AuthModule.getUserId();
     const isOnline = SyncEngine.isOnline() && SupabaseClient.hasSession();
 
-    // Check for PENDING affiliation requests first
-    const pendientes = await AgroDB.query('ingeniero_agricultores',
-      r => r.agricultor_id === userId && r.estado === 'pendiente');
+    // Check for affiliation requests - try SERVER first (local may not have them yet)
+    let allAfiliaciones = [];
+    if (isOnline) {
+      try {
+        allAfiliaciones = await SupabaseClient.select('ingeniero_agricultores', { agricultor_id: userId }) || [];
+        // Also save to local for offline use
+        for (const af of allAfiliaciones) {
+          try {
+            const exists = await AgroDB.getById('ingeniero_agricultores', af.id);
+            if (exists) {
+              await AgroDB.update('ingeniero_agricultores', af.id, { ...af, synced: true });
+            } else {
+              await AgroDB.add('ingeniero_agricultores', { ...af, synced: true });
+            }
+          } catch(e) {}
+        }
+      } catch (e) {
+        console.warn('[MiTecnico] Server query failed, using local:', e.message);
+        allAfiliaciones = await AgroDB.query('ingeniero_agricultores', r => r.agricultor_id === userId);
+      }
+    } else {
+      allAfiliaciones = await AgroDB.query('ingeniero_agricultores', r => r.agricultor_id === userId);
+    }
+
+    const pendientes = allAfiliaciones.filter(a => a.estado === 'pendiente');
+    const afiliaciones = allAfiliaciones.filter(a => a.estado === 'activo');
 
     // Resolve engineer names for pending requests (from server since other user's profile)
     const pendientesData = [];
@@ -27,10 +50,6 @@ const MiTecnicoModule = (() => {
       }
       pendientesData.push({ id: p.id, nombre: ingNombre, fecha: p.fecha_afiliacion });
     }
-
-    // Find affiliated engineer(s)
-    const afiliaciones = await AgroDB.query('ingeniero_agricultores',
-      r => r.agricultor_id === userId && r.estado === 'activo');
 
     if (afiliaciones.length === 0 && pendientesData.length === 0) {
       container.innerHTML = `

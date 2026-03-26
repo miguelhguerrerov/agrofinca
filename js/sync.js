@@ -125,8 +125,17 @@ const SyncEngine = (() => {
     chat_grupo_miembros: ['id', 'grupo_id', 'usuario_id', 'fecha_union', 'created_at', 'updated_at']
   };
 
-  // Tables that DON'T have finca_id column
-  const TABLES_WITHOUT_FINCA_ID = ['fincas'];
+  // Tables that DON'T have finca_id column (pull without finca_id filter)
+  const TABLES_WITHOUT_FINCA_ID = [
+    'fincas',
+    'ingeniero_agricultores',   // uses ingeniero_id + agricultor_id
+    'protocolos_evaluacion',    // uses ingeniero_id
+    'productos_ingeniero',      // uses ingeniero_id
+    'chat_grupos',              // uses ingeniero_id
+    'chat_grupo_miembros',      // uses grupo_id + usuario_id
+    'chat_conversaciones',      // uses participante_1 + participante_2
+    'chat_mensajes',            // uses conversacion_id + emisor_id
+  ];
 
   function setStatusCallback(callback) {
     onStatusChange = callback;

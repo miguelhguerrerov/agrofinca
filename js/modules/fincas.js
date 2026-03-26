@@ -483,7 +483,7 @@ const FincasModule = (() => {
                         <span class="area-color" style="background:${a.color || type.color}"></span>
                         <span class="data-list-title">${a.nombre}</span>
                       </div>
-                      <div class="data-list-sub">${a.cultivo_actual_nombre || (type.value === 'productivo' ? 'Sin cultivo' : type.label)} · ${Format.area(a.area_m2)}</div>
+                      <div class="data-list-sub area-sub-info" data-area-id="${a.id}">${a.cultivo_actual_nombre || (type.value === 'productivo' ? 'Sin cultivo' : type.label)} · ${Format.area(a.area_m2)}</div>
                     </div>
                     <div class="data-list-actions">
                       <button class="btn btn-sm btn-outline btn-edit-area" data-id="${a.id}">✏️</button>
@@ -497,6 +497,26 @@ const FincasModule = (() => {
         </div>
       `}
     `;
+
+    // Enrich area subtitles with policultivo info
+    (async () => {
+      try {
+        const allAreaCultivos = await AgroDB.query('area_cultivos', r => r.finca_id === fincaId && r.activo);
+        const cultivos = await AgroDB.getByIndex('cultivos_catalogo', 'finca_id', fincaId);
+        document.querySelectorAll('.area-sub-info').forEach(el => {
+          const areaId = el.dataset.areaId;
+          const shares = allAreaCultivos.filter(ac => ac.area_id === areaId);
+          if (shares.length > 1) {
+            const area = areas.find(a => a.id === areaId);
+            const shareText = shares.map(sh => {
+              const c = cultivos.find(x => x.id === sh.cultivo_id);
+              return `${Math.round((sh.proporcion || 0) * 100)}% ${c?.nombre || '?'}`;
+            }).join(' · ');
+            el.textContent = `${shareText} · ${Format.area(area?.area_m2)}`;
+          }
+        });
+      } catch { /* ignore */ }
+    })();
 
     // Init satellite map with labels
     setTimeout(() => {

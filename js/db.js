@@ -5,7 +5,7 @@
 
 const AgroDB = (() => {
   const DB_NAME = 'agrofinca_db';
-  const DB_VERSION = 5;
+  const DB_VERSION = 6;
   let db = null;
 
   // All object stores (tables)
@@ -33,7 +33,13 @@ const AgroDB = (() => {
     'ai_conversations',
     'ai_chat_history',
     'user_profiles_local',
-    'payment_history'
+    'payment_history',
+    'activos_finca',
+    'area_cultivos',
+    'depreciacion_mensual',
+    'clientes',
+    'proveedores',
+    'fases_fenologicas'
   ];
 
   // Initialize database
@@ -249,6 +255,54 @@ const AgroDB = (() => {
           const store = database.createObjectStore('payment_history', { keyPath: 'id' });
           store.createIndex('usuario_id', 'usuario_id', { unique: false });
           store.createIndex('fecha', 'fecha', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- activos_finca (activos depreciables: herramientas, infraestructura) ---
+        if (!database.objectStoreNames.contains('activos_finca')) {
+          const store = database.createObjectStore('activos_finca', { keyPath: 'id' });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- area_cultivos (policultivo: proporción de cada cultivo por área) ---
+        if (!database.objectStoreNames.contains('area_cultivos')) {
+          const store = database.createObjectStore('area_cultivos', { keyPath: 'id' });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('area_id', 'area_id', { unique: false });
+          store.createIndex('cultivo_id', 'cultivo_id', { unique: false });
+          store.createIndex('ciclo_id', 'ciclo_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- depreciacion_mensual (registros mensuales auto-generados) ---
+        if (!database.objectStoreNames.contains('depreciacion_mensual')) {
+          const store = database.createObjectStore('depreciacion_mensual', { keyPath: 'id' });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('activo_id', 'activo_id', { unique: false });
+          store.createIndex('mes', 'mes', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- clientes (directorio de compradores) ---
+        if (!database.objectStoreNames.contains('clientes')) {
+          const store = database.createObjectStore('clientes', { keyPath: 'id' });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- proveedores (directorio de proveedores) ---
+        if (!database.objectStoreNames.contains('proveedores')) {
+          const store = database.createObjectStore('proveedores', { keyPath: 'id' });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- fases_fenologicas (fases de cultivos perennes) ---
+        if (!database.objectStoreNames.contains('fases_fenologicas')) {
+          const store = database.createObjectStore('fases_fenologicas', { keyPath: 'id' });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('ciclo_id', 'ciclo_id', { unique: false });
           store.createIndex('synced', 'synced', { unique: false });
         }
       };

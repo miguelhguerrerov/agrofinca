@@ -30,6 +30,20 @@ const ProduccionModule = (() => {
     { value: 'kg/m²/ciclo', label: 'kg/m²/ciclo' }
   ];
 
+  // Helper: get active crop shares for an area (policultivo)
+  async function getAreaCropShares(areaId) {
+    try {
+      const shares = await AgroDB.query('area_cultivos', r => r.area_id === areaId && r.activo);
+      return shares;
+    } catch { return []; }
+  }
+
+  // Helper: convert any harvest unit to kg
+  function convertToKg(cantidad, unidad) {
+    const conv = { kg: 1, toneladas: 1000, quintales: 45.36, libras: 0.4536, sacos: 50, gramos: 0.001 };
+    return (cantidad || 0) * (conv[unidad] || 1);
+  }
+
   async function render(container, fincaId) {
     if (!fincaId) {
       container.innerHTML = '<div class="empty-state"><div class="empty-icon">🌿</div><h3>Selecciona una finca</h3></div>';
@@ -93,41 +107,96 @@ const ProduccionModule = (() => {
 
   function renderTab(el, fincaId, cultivos, ciclos, cosechas, areas) {
     switch (currentTab) {
-      case 'ciclos': renderCiclos(el, fincaId, cultivos, ciclos, areas); break;
+      case 'ciclos': renderCiclos(el, fincaId, cultivos, ciclos, cosechas, areas); break;
       case 'cosechas': renderCosechas(el, fincaId, cultivos, ciclos, cosechas); break;
       case 'cultivos': renderCatalogo(el, fincaId, cultivos); break;
     }
   }
 
-  function renderCiclos(el, fincaId, cultivos, ciclos, areas) {
+  async function renderCiclos(el, fincaId, cultivos, ciclos, cosechas, areas) {
     const sorted = [...ciclos].sort((a, b) => (a.estado === 'activo' ? -1 : 1));
+
+    // Build ciclo cards with yield and fases info
+    const cardPromises = sorted.map(async (c) => {
+      const progress = DateUtils.cycleProgress(c.fecha_inicio, c.ciclo_dias);
+
+      // Yield calculation
+      const cicloCosechas = cosechas.filter(co => co.ciclo_id === c.id);
+      const totalKg = cicloCosechas.reduce((s, co) => s + convertToKg(co.cantidad, co.unidad), 0);
+      const area = c.area_id ? await AgroDB.getById('areas', c.area_id) : null;
+      const shares = c.area_id ? await getAreaCropShares(c.area_id) : [];
+      const share = shares.find(s => s.ciclo_id === c.id);
+      const proporcion = share?.proporcion || 1.0;
+      const areaM2 = area ? area.area_m2 * proporcion : 0;
+      const areaHa = areaM2 / 10000;
+      const tHa = areaHa > 0 ? (totalKg / 1000) / areaHa : 0;
+      const kgPlanta = c.cantidad_plantas > 0 ? totalKg / c.cantidad_plantas : null;
+
+      // Yield display
+      const yieldHTML = cicloCosechas.length > 0 ? `
+        <div style="font-size:0.82rem;color:var(--gray-600);margin-top:0.25rem">
+          📊 ${totalKg.toFixed(1)} kg total${areaHa > 0 ? ` · ${tHa.toFixed(2)} t/ha` : ''}${kgPlanta !== null ? ` · ${kgPlanta.toFixed(2)} kg/planta` : ''}
+        </div>` : '';
+
+      // Fases fenológicas for perennial cycles
+      let fasesHTML = '';
+      const cultivoData = cultivos.find(x => x.id === c.cultivo_id);
+      if (c.tipo_ciclo === 'perenne' || (cultivoData && cultivoData.ciclo_dias === 0)) {
+        const fases = await AgroDB.query('fases_fenologicas', r => r.ciclo_id === c.id);
+        const sortedFases = fases.sort((a, b) => (a.orden || 0) - (b.orden || 0));
+        if (sortedFases.length > 0) {
+          fasesHTML = `
+            <div style="margin-top:0.5rem;border-top:1px solid var(--gray-200);padding-top:0.5rem">
+              <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.25rem">Fases fenológicas</div>
+              ${sortedFases.map(f => {
+                const color = f.estado === 'completada' ? 'var(--green-600)' :
+                              f.estado === 'en_curso' ? 'var(--yellow-600)' : 'var(--gray-400)';
+                const icon = f.genera_ingresos ? '💰' : '🌱';
+                return `
+                  <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-left:3px solid ${color};padding-left:0.75rem;margin-left:0.5rem">
+                    <span>${icon}</span>
+                    <div>
+                      <div style="font-weight:600;font-size:0.85rem">${f.nombre}</div>
+                      <div style="font-size:0.75rem;color:var(--gray-500)">${f.estado === 'completada' ? '✅ Completada' : f.estado === 'en_curso' ? '⏳ En curso' : '⏸️ Pendiente'}${f.fecha_inicio ? ' · Inicio: ' + f.fecha_inicio : ''}</div>
+                    </div>
+                    ${f.estado !== 'completada' ? `<button class="btn btn-xs btn-outline" style="margin-left:auto" onclick="ProduccionModule.avanzarFase('${c.id}', '${f.id}')">${f.estado === 'en_curso' ? '✅ Completar' : '▶️ Iniciar'}</button>` : ''}
+                  </div>`;
+              }).join('')}
+            </div>`;
+        }
+      }
+
+      return `
+        <div class="card">
+          <div class="flex-between">
+            <div>
+              <div class="card-title">${c.cultivo_nombre || 'Cultivo'}</div>
+              <div class="card-subtitle">${c.area_nombre || 'Sin área'} · ${Format.dateShort(c.fecha_inicio)}${c.fecha_fin_real ? ' → ' + Format.dateShort(c.fecha_fin_real) : ''}</div>
+            </div>
+            <span class="badge ${c.estado === 'activo' ? 'badge-green' : c.estado === 'cosechado' ? 'badge-amber' : 'badge-gray'}">${c.estado}</span>
+          </div>
+          ${progress !== null ? `<div id="ciclo-prog-${c.id}" class="mt-1"></div>` : ''}
+          ${c.fecha_fin_estimada ? `<div class="text-xs text-muted mt-1">Cosecha estimada: ${Format.date(c.fecha_fin_estimada)}</div>` : ''}
+          ${yieldHTML}
+          ${fasesHTML}
+          <div class="flex gap-1 mt-1">
+            <button class="btn btn-sm btn-outline btn-harvest-ciclo" data-id="${c.id}" data-cultivo="${c.cultivo_id}">🌾 Cosechar</button>
+            ${c.estado === 'activo' ? `<button class="btn btn-sm btn-secondary btn-close-ciclo" data-id="${c.id}">✅ Cerrar ciclo</button>` : ''}
+            <button class="btn btn-sm btn-secondary btn-edit-ciclo" data-id="${c.id}">✏️</button>
+            <button class="btn btn-sm btn-danger btn-del-ciclo" data-id="${c.id}">🗑</button>
+          </div>
+        </div>`;
+    });
+
+    const cards = await Promise.all(cardPromises);
+
     el.innerHTML = `
       <div class="flex-between mb-1">
         <span class="text-sm text-muted">${ciclos.length} ciclos</span>
         <button class="btn btn-primary btn-sm" id="btn-new-ciclo">+ Nuevo Ciclo</button>
       </div>
       ${sorted.length === 0 ? '<div class="empty-state"><h3>Sin ciclos productivos</h3><p>Inicia un nuevo ciclo para registrar producción.</p></div>' :
-      sorted.map(c => {
-        const progress = DateUtils.cycleProgress(c.fecha_inicio, c.ciclo_dias);
-        return `
-          <div class="card">
-            <div class="flex-between">
-              <div>
-                <div class="card-title">${c.cultivo_nombre || 'Cultivo'}</div>
-                <div class="card-subtitle">${c.area_nombre || 'Sin área'} · ${Format.dateShort(c.fecha_inicio)}${c.fecha_fin_real ? ' → ' + Format.dateShort(c.fecha_fin_real) : ''}</div>
-              </div>
-              <span class="badge ${c.estado === 'activo' ? 'badge-green' : c.estado === 'cosechado' ? 'badge-amber' : 'badge-gray'}">${c.estado}</span>
-            </div>
-            ${progress !== null ? `<div id="ciclo-prog-${c.id}" class="mt-1"></div>` : ''}
-            ${c.fecha_fin_estimada ? `<div class="text-xs text-muted mt-1">Cosecha estimada: ${Format.date(c.fecha_fin_estimada)}</div>` : ''}
-            <div class="flex gap-1 mt-1">
-              <button class="btn btn-sm btn-outline btn-harvest-ciclo" data-id="${c.id}" data-cultivo="${c.cultivo_id}">🌾 Cosechar</button>
-              ${c.estado === 'activo' ? `<button class="btn btn-sm btn-secondary btn-close-ciclo" data-id="${c.id}">✅ Cerrar ciclo</button>` : ''}
-              <button class="btn btn-sm btn-secondary btn-edit-ciclo" data-id="${c.id}">✏️</button>
-              <button class="btn btn-sm btn-danger btn-del-ciclo" data-id="${c.id}">🗑</button>
-            </div>
-          </div>`;
-      }).join('')}
+      cards.join('')}
     `;
 
     // Progress bars
@@ -280,6 +349,12 @@ const ProduccionModule = (() => {
           </select>
         </div>
       </div>
+      <div class="form-group" id="ciclo-policultivo"></div>
+      <div class="form-group">
+        <label>Proporción del área (%)</label>
+        <input class="form-input" type="number" id="ciclo-proporcion" min="1" max="100" value="100" step="1">
+        <span class="form-hint">Porcentaje del área que ocupa este cultivo</span>
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label>Fecha de inicio *</label>
@@ -323,6 +398,47 @@ const ProduccionModule = (() => {
       }
     });
 
+    // Area change handler: show policultivo info
+    document.getElementById('ciclo-area').addEventListener('change', async (e) => {
+      const selectedAreaId = e.target.value;
+      const policultDiv = document.getElementById('ciclo-policultivo');
+      const propInput = document.getElementById('ciclo-proporcion');
+
+      if (!selectedAreaId) {
+        if (policultDiv) policultDiv.innerHTML = '';
+        if (propInput) { propInput.max = 100; propInput.value = 100; }
+        return;
+      }
+
+      // Show existing crops in this area (policultivo)
+      const shares = await getAreaCropShares(selectedAreaId);
+      if (policultDiv && shares.length > 0) {
+        const catalogoCultivos = await AgroDB.getByIndex('cultivos_catalogo', 'finca_id', fincaId);
+        const usedPct = shares.reduce((s, sh) => s + (sh.proporcion || 0), 0) * 100;
+        policultDiv.innerHTML = `
+          <div style="background:var(--yellow-50);padding:0.75rem;border-radius:8px;margin-bottom:0.5rem">
+            <strong>🌿 Policultivo detectado</strong>
+            <div style="margin-top:0.5rem;font-size:0.85rem">
+              ${shares.map(sh => {
+                const c = catalogoCultivos.find(x => x.id === sh.cultivo_id);
+                return `${c?.nombre || 'Cultivo'}: ${Math.round((sh.proporcion || 0) * 100)}%`;
+              }).join(' · ')}
+            </div>
+            <div style="margin-top:0.5rem;font-size:0.85rem">Disponible: ${Math.round((1 - usedPct/100) * 100)}%</div>
+          </div>`;
+        // Set max for proportion input
+        if (propInput) propInput.max = Math.round((1 - usedPct/100) * 100);
+      } else {
+        if (policultDiv) policultDiv.innerHTML = '';
+        if (propInput) { propInput.max = 100; propInput.value = 100; }
+      }
+    });
+
+    // Trigger area change if editing and area is pre-selected
+    if (ciclo?.area_id) {
+      document.getElementById('ciclo-area').dispatchEvent(new Event('change'));
+    }
+
     document.getElementById('btn-save-ciclo').addEventListener('click', async () => {
       const cultivoSel = document.getElementById('ciclo-cultivo');
       const areaSel = document.getElementById('ciclo-area');
@@ -331,6 +447,9 @@ const ProduccionModule = (() => {
       const cultivoOpt = cultivoSel.selectedOptions[0];
       const areaOpt = areaSel.selectedOptions[0];
       const cultivoData = await AgroDB.getById('cultivos_catalogo', cultivoSel.value);
+
+      // Auto-infer tipo_ciclo from cultivo
+      const tipo_ciclo = (cultivoData?.ciclo_dias === 0) ? 'perenne' : 'estacional';
 
       const data = {
         finca_id: fincaId,
@@ -343,18 +462,50 @@ const ProduccionModule = (() => {
         ciclo_dias: cultivoData?.ciclo_dias || 0,
         cantidad_plantas: parseInt(document.getElementById('ciclo-plantas').value) || 0,
         estado: document.getElementById('ciclo-estado').value,
-        notas: document.getElementById('ciclo-notas').value.trim()
+        notas: document.getElementById('ciclo-notas').value.trim(),
+        tipo_ciclo: tipo_ciclo
       };
 
       if (isEdit) {
         await AgroDB.update('ciclos_productivos', ciclo.id, data);
       } else {
-        await AgroDB.add('ciclos_productivos', data);
+        const newCicloId = await AgroDB.add('ciclos_productivos', data);
+
+        // Create area_cultivos record for policultivo support
+        const proporcion = (parseInt(document.getElementById('ciclo-proporcion')?.value) || 100) / 100;
         if (data.area_id) {
+          await AgroDB.add('area_cultivos', {
+            finca_id: fincaId,
+            area_id: data.area_id,
+            cultivo_id: data.cultivo_id,
+            ciclo_id: newCicloId,
+            proporcion: Math.min(proporcion, 1.0),
+            fecha_inicio: data.fecha_inicio,
+            activo: true
+          });
+
           await AgroDB.update('areas', data.area_id, {
             cultivo_actual_id: data.cultivo_id,
             cultivo_actual_nombre: data.cultivo_nombre
           });
+        }
+
+        // Auto-create default fases fenológicas for perennial cycles
+        if (data.tipo_ciclo === 'perenne') {
+          const fasesDefault = [
+            { nombre: 'Vivero/Germinación', orden: 1, genera_ingresos: false, descripcion: 'Preparación de plántulas' },
+            { nombre: 'Crecimiento vegetativo', orden: 2, genera_ingresos: false, descripcion: 'Desarrollo de la planta' },
+            { nombre: 'Primera floración', orden: 3, genera_ingresos: false, descripcion: 'Inicio de floración' },
+            { nombre: 'Producción', orden: 4, genera_ingresos: true, descripcion: 'Fase productiva con cosechas recurrentes' }
+          ];
+          for (const fase of fasesDefault) {
+            await AgroDB.add('fases_fenologicas', {
+              finca_id: fincaId,
+              ciclo_id: newCicloId,
+              ...fase,
+              estado: fase.orden === 1 ? 'en_curso' : 'pendiente'
+            });
+          }
         }
       }
       App.closeModal();
@@ -604,5 +755,29 @@ const ProduccionModule = (() => {
     });
   }
 
-  return { render, showQuickHarvest };
+  // ---- Avanzar Fase Fenológica ----
+  async function avanzarFase(cicloId, faseId) {
+    const fase = await AgroDB.getById('fases_fenologicas', faseId);
+    if (!fase) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (fase.estado === 'pendiente') {
+      await AgroDB.update('fases_fenologicas', faseId, { estado: 'en_curso', fecha_inicio: today });
+      App.showToast(`Fase "${fase.nombre}" iniciada`, 'success');
+    } else if (fase.estado === 'en_curso') {
+      await AgroDB.update('fases_fenologicas', faseId, { estado: 'completada', fecha_fin: today });
+      // Auto-start next phase
+      const fases = await AgroDB.query('fases_fenologicas', r => r.ciclo_id === cicloId);
+      const next = fases.find(f => f.orden === (fase.orden || 0) + 1);
+      if (next && next.estado === 'pendiente') {
+        await AgroDB.update('fases_fenologicas', next.id, { estado: 'en_curso', fecha_inicio: today });
+      }
+      App.showToast(`Fase "${fase.nombre}" completada`, 'success');
+    }
+
+    App.refreshCurrentPage();
+  }
+
+  return { render, showQuickHarvest, avanzarFase };
 })();

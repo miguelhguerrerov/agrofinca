@@ -790,3 +790,167 @@ DO $$ BEGIN
   RAISE NOTICE 'All tables created with inline columns. PostgREST cache refreshed.';
   RAISE NOTICE 'If sync still fails, run: NOTIFY pgrst, ''reload schema''; again.';
 END $$;
+
+-- ============================================================================
+-- STEP: NEW TABLES FOR ACCOUNTING SYSTEM v2
+-- ============================================================================
+
+-- --- clientes (directorio de compradores) ---
+CREATE TABLE IF NOT EXISTS clientes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID NOT NULL REFERENCES fincas(id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  telefono TEXT,
+  email TEXT,
+  ubicacion TEXT,
+  tipo TEXT DEFAULT 'otro',
+  notas TEXT,
+  activo BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "clientes_select" ON clientes FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "clientes_insert" ON clientes FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "clientes_update" ON clientes FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "clientes_delete" ON clientes FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+-- --- proveedores (directorio de proveedores) ---
+CREATE TABLE IF NOT EXISTS proveedores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID NOT NULL REFERENCES fincas(id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  telefono TEXT,
+  email TEXT,
+  ubicacion TEXT,
+  tipo TEXT DEFAULT 'otro',
+  productos_frecuentes TEXT,
+  notas TEXT,
+  activo BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE proveedores ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "proveedores_select" ON proveedores FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "proveedores_insert" ON proveedores FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "proveedores_update" ON proveedores FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "proveedores_delete" ON proveedores FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+-- --- activos_finca (activos depreciables) ---
+CREATE TABLE IF NOT EXISTS activos_finca (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID NOT NULL REFERENCES fincas(id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  categoria TEXT DEFAULT 'otro',
+  fecha_adquisicion DATE,
+  costo_adquisicion NUMERIC DEFAULT 0,
+  vida_util_meses INTEGER DEFAULT 12,
+  valor_residual NUMERIC DEFAULT 0,
+  estado TEXT DEFAULT 'activo',
+  area_id UUID REFERENCES areas(id),
+  cultivo_id UUID REFERENCES cultivos_catalogo(id),
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE activos_finca ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "activos_finca_select" ON activos_finca FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "activos_finca_insert" ON activos_finca FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "activos_finca_update" ON activos_finca FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "activos_finca_delete" ON activos_finca FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+-- --- area_cultivos (policultivo: proporción por área) ---
+CREATE TABLE IF NOT EXISTS area_cultivos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID NOT NULL REFERENCES fincas(id) ON DELETE CASCADE,
+  area_id UUID NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+  cultivo_id UUID NOT NULL REFERENCES cultivos_catalogo(id),
+  ciclo_id UUID REFERENCES ciclos_productivos(id),
+  proporcion NUMERIC DEFAULT 1.0,
+  fecha_inicio DATE,
+  fecha_fin DATE,
+  activo BOOLEAN DEFAULT true,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE area_cultivos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "area_cultivos_select" ON area_cultivos FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "area_cultivos_insert" ON area_cultivos FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "area_cultivos_update" ON area_cultivos FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "area_cultivos_delete" ON area_cultivos FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+-- --- depreciacion_mensual (registros mensuales auto-generados) ---
+CREATE TABLE IF NOT EXISTS depreciacion_mensual (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID NOT NULL REFERENCES fincas(id) ON DELETE CASCADE,
+  activo_id UUID NOT NULL REFERENCES activos_finca(id) ON DELETE CASCADE,
+  mes TEXT NOT NULL,
+  monto NUMERIC DEFAULT 0,
+  area_id UUID REFERENCES areas(id),
+  cultivo_id UUID REFERENCES cultivos_catalogo(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE depreciacion_mensual ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "depreciacion_mensual_select" ON depreciacion_mensual FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "depreciacion_mensual_insert" ON depreciacion_mensual FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "depreciacion_mensual_update" ON depreciacion_mensual FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "depreciacion_mensual_delete" ON depreciacion_mensual FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+-- --- fases_fenologicas (fases de cultivos perennes) ---
+CREATE TABLE IF NOT EXISTS fases_fenologicas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID NOT NULL REFERENCES fincas(id) ON DELETE CASCADE,
+  ciclo_id UUID NOT NULL REFERENCES ciclos_productivos(id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  orden INTEGER DEFAULT 0,
+  fecha_inicio DATE,
+  fecha_fin DATE,
+  estado TEXT DEFAULT 'pendiente',
+  genera_ingresos BOOLEAN DEFAULT false,
+  descripcion TEXT,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE fases_fenologicas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "fases_fenologicas_select" ON fases_fenologicas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "fases_fenologicas_insert" ON fases_fenologicas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "fases_fenologicas_update" ON fases_fenologicas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+CREATE POLICY "fases_fenologicas_delete" ON fases_fenologicas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
+
+-- ============================================================================
+-- STEP: ALTER EXISTING TABLES - Add missing columns
+-- ============================================================================
+
+-- ciclos_productivos: add missing columns
+ALTER TABLE ciclos_productivos ADD COLUMN IF NOT EXISTS cantidad_plantas INTEGER DEFAULT 0;
+ALTER TABLE ciclos_productivos ADD COLUMN IF NOT EXISTS fecha_fin_estimada DATE;
+ALTER TABLE ciclos_productivos ADD COLUMN IF NOT EXISTS ciclo_dias INTEGER DEFAULT 0;
+ALTER TABLE ciclos_productivos ADD COLUMN IF NOT EXISTS tipo_ciclo TEXT DEFAULT 'estacional';
+
+-- costos: add missing columns
+ALTER TABLE costos ADD COLUMN IF NOT EXISTS tipo_costo TEXT DEFAULT 'variable';
+ALTER TABLE costos ADD COLUMN IF NOT EXISTS es_mano_obra_familiar BOOLEAN DEFAULT false;
+ALTER TABLE costos ADD COLUMN IF NOT EXISTS registrado_por TEXT;
+ALTER TABLE costos ADD COLUMN IF NOT EXISTS proveedor_id UUID REFERENCES proveedores(id);
+
+-- ventas: add missing columns
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS forma_pago TEXT;
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS registrado_por TEXT;
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS cliente_id UUID REFERENCES clientes(id);
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS ciclo_id UUID REFERENCES ciclos_productivos(id);
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS area_id UUID REFERENCES areas(id);
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS cosecha_id UUID REFERENCES cosechas(id);
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS cobrado BOOLEAN DEFAULT true;
+ALTER TABLE ventas ADD COLUMN IF NOT EXISTS fecha_cobro DATE;
+
+-- cosechas: add missing columns
+ALTER TABLE cosechas ADD COLUMN IF NOT EXISTS registrado_por TEXT;

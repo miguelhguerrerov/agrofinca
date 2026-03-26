@@ -3,6 +3,7 @@
 // Cost tracking: inputs, labor (hired+family),
 // tools, infrastructure, transport, phytosanitary
 // Smart defaults, repeat last cost
+// Tabs: Costos, Proveedores, Activos
 // ============================================
 
 const CostosModule = (() => {
@@ -20,7 +21,12 @@ const CostosModule = (() => {
     { value: 'otro', label: 'Otro', icon: '📋' }
   ];
 
+  // Variable vs Fixed cost mapping
+  const VARIABLE_CATEGORIES = ['insumo', 'mano_obra_contratada', 'mano_obra_familiar', 'fitosanitario', 'empaque', 'transporte'];
+  const FIXED_CATEGORIES = ['herramienta', 'infraestructura', 'riego'];
+
   let _lastCostDefaults = {};
+  let _currentTab = 'costos';
 
   async function getLastCostDefaults(fincaId) {
     if (_lastCostDefaults[fincaId]) return _lastCostDefaults[fincaId];
@@ -43,6 +49,40 @@ const CostosModule = (() => {
       return;
     }
 
+    // Render tabs header
+    container.innerHTML = `
+      <div class="tabs-row" style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:1rem">
+        <button class="tab-btn ${_currentTab === 'costos' ? 'active' : ''}" data-tab="costos">💰 Costos</button>
+        <button class="tab-btn ${_currentTab === 'proveedores' ? 'active' : ''}" data-tab="proveedores">🏪 Proveedores</button>
+        <button class="tab-btn ${_currentTab === 'activos' ? 'active' : ''}" data-tab="activos">🔧 Activos</button>
+      </div>
+      <div id="costos-tab-content"></div>
+    `;
+
+    // Bind tab clicks
+    container.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _currentTab = btn.dataset.tab;
+        render(container, fincaId);
+      });
+    });
+
+    const tabContent = document.getElementById('costos-tab-content');
+
+    if (_currentTab === 'costos') {
+      await renderCostosTab(tabContent, fincaId);
+    } else if (_currentTab === 'proveedores') {
+      await renderProveedores(tabContent, fincaId);
+    } else if (_currentTab === 'activos') {
+      if (typeof ActivosModule !== 'undefined' && ActivosModule.render) {
+        await ActivosModule.render(tabContent, fincaId);
+      } else {
+        tabContent.innerHTML = '<div class="empty-state"><div class="empty-icon">🔧</div><h3>Activos</h3><p>El modulo de activos estara disponible proximamente.</p></div>';
+      }
+    }
+  }
+
+  async function renderCostosTab(container, fincaId) {
     const costos = await AgroDB.query('costos', r => r.finca_id === fincaId);
     const sorted = [...costos].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
@@ -222,6 +262,16 @@ const CostosModule = (() => {
     const cultivos = await AgroDB.getByIndex('cultivos_catalogo', 'finca_id', fincaId);
     const ciclos = await AgroDB.query('ciclos_productivos', r => r.finca_id === fincaId && r.estado === 'activo');
 
+    // Load areas and proveedores for the new fields
+    let areas = [];
+    try { areas = await AgroDB.query('areas', r => r.finca_id === fincaId); } catch(e) { /* store may not exist */ }
+    let proveedores = [];
+    try { proveedores = await AgroDB.query('proveedores', r => r.finca_id === fincaId && r.activo !== false); } catch(e) { /* store may not exist */ }
+
+    // Determine default tipo_costo based on category
+    const currentCat = costo?.categoria || CATEGORIAS[0].value;
+    const defaultTipoCosto = costo?.tipo_costo || (FIXED_CATEGORIES.includes(currentCat) ? 'fijo' : 'variable');
+
     const body = `
       <div class="form-group">
         <label>Categoría *</label>
@@ -279,8 +329,35 @@ const CostosModule = (() => {
       </div>
 
       <!-- Collapsible optional fields -->
-      <details id="costo-optional" ${(costo?.cultivo_id || costo?.ciclo_id || costo?.notas) ? 'open' : ''}>
-        <summary style="cursor:pointer;font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">Campos opcionales (cultivo, ciclo, notas...)</summary>
+      <details id="costo-optional" ${(costo?.cultivo_id || costo?.ciclo_id || costo?.notas || costo?.tipo_costo || costo?.area_id || costo?.proveedor_id) ? 'open' : ''}>
+        <summary style="cursor:pointer;font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">Campos opcionales (cultivo, ciclo, proveedor, tipo...)</summary>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Tipo de costo</label>
+            <select id="costo-tipo-costo">
+              <option value="variable" ${defaultTipoCosto === 'variable' ? 'selected' : ''}>Variable</option>
+              <option value="fijo" ${defaultTipoCosto === 'fijo' ? 'selected' : ''}>Fijo</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Area</label>
+            <select id="costo-area">
+              <option value="">Sin area</option>
+              ${areas.map(a => `<option value="${a.id}" ${costo?.area_id === a.id ? 'selected' : ''}>${a.nombre || a.id}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Proveedor</label>
+          <select id="costo-proveedor">
+            <option value="">Sin proveedor</option>
+            ${proveedores.map(p => `<option value="${p.id}" data-nombre="${p.nombre}" ${costo?.proveedor_id === p.id ? 'selected' : ''}>${p.nombre}</option>`).join('')}
+            <option value="__nuevo__">+ Nuevo proveedor...</option>
+          </select>
+        </div>
+
         <div class="form-row">
           <div class="form-group">
             <label>Cultivo / Actividad</label>
@@ -317,15 +394,44 @@ const CostosModule = (() => {
     // Show family labor info
     const catSel = document.getElementById('costo-categoria');
     const laborInfo = document.getElementById('labor-info');
+    const tipoCostoSel = document.getElementById('costo-tipo-costo');
+
     const toggleLaborInfo = () => {
       const val = catSel.value;
       laborInfo.style.display = (val === 'mano_obra_familiar') ? 'block' : 'none';
       if (val === 'mano_obra_familiar' || val === 'mano_obra_contratada') {
         document.getElementById('costo-unidad').value = 'jornal';
       }
+      // Auto-set tipo_costo based on category
+      if (FIXED_CATEGORIES.includes(val)) {
+        tipoCostoSel.value = 'fijo';
+      } else if (VARIABLE_CATEGORIES.includes(val)) {
+        tipoCostoSel.value = 'variable';
+      }
     };
     catSel.addEventListener('change', toggleLaborInfo);
     toggleLaborInfo();
+
+    // Proveedor select: handle "Nuevo proveedor" option
+    const proveedorSel = document.getElementById('costo-proveedor');
+    proveedorSel?.addEventListener('change', () => {
+      if (proveedorSel.value === '__nuevo__') {
+        proveedorSel.value = '';
+        showProveedorForm(fincaId, null, async (newProv) => {
+          // After creating, reload proveedores and select the new one
+          let updatedProvs = [];
+          try { updatedProvs = await AgroDB.query('proveedores', r => r.finca_id === fincaId && r.activo !== false); } catch(e) {}
+          // Rebuild options
+          let opts = '<option value="">Sin proveedor</option>';
+          updatedProvs.forEach(p => {
+            const sel = (newProv && p.id === newProv.id) ? 'selected' : '';
+            opts += `<option value="${p.id}" data-nombre="${p.nombre}" ${sel}>${p.nombre}</option>`;
+          });
+          opts += '<option value="__nuevo__">+ Nuevo proveedor...</option>';
+          proveedorSel.innerHTML = opts;
+        });
+      }
+    });
 
     // Auto calc
     const calcTotal = () => {
@@ -343,6 +449,8 @@ const CostosModule = (() => {
 
       const cultivoSel = document.getElementById('costo-cultivo');
       const cultivoOpt = cultivoSel?.selectedOptions[0];
+      const provSel = document.getElementById('costo-proveedor');
+      const provOpt = provSel?.selectedOptions[0];
 
       const data = {
         finca_id: fincaId,
@@ -357,6 +465,10 @@ const CostosModule = (() => {
         costo_unitario: costoUnit || 0,
         total: parseFloat(document.getElementById('costo-total').value) || 0,
         es_mano_obra_familiar: document.getElementById('costo-categoria').value === 'mano_obra_familiar',
+        tipo_costo: document.getElementById('costo-tipo-costo')?.value || 'variable',
+        area_id: document.getElementById('costo-area')?.value || null,
+        proveedor_id: (provSel?.value && provSel.value !== '__nuevo__') ? provSel.value : null,
+        proveedor: (provSel?.value && provSel.value !== '__nuevo__' && provOpt) ? provOpt.dataset.nombre || provOpt.textContent.trim() : null,
         notas: document.getElementById('costo-notas')?.value.trim() || '',
         registrado_por: (() => { const u = AuthModule.getUser(); return u?.nombre || u?.email || 'sistema'; })()
       };
@@ -371,5 +483,148 @@ const CostosModule = (() => {
     });
   }
 
-  return { render, showQuickCost };
+  // ============================================
+  // Proveedores
+  // ============================================
+
+  async function renderProveedores(container, fincaId) {
+    let proveedores = [];
+    try { proveedores = await AgroDB.query('proveedores', r => r.finca_id === fincaId && r.activo !== false); } catch(e) {}
+    let costos = [];
+    try { costos = await AgroDB.query('costos', r => r.finca_id === fincaId); } catch(e) {}
+
+    const stats = proveedores.map(p => {
+      const pCostos = costos.filter(c => c.proveedor_id === p.id || c.proveedor === p.nombre);
+      const totalGastado = pCostos.reduce((s, c) => s + (c.total || 0), 0);
+      const numCompras = pCostos.length;
+      const ultimaCompra = pCostos.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0];
+      return { ...p, totalGastado, numCompras, ultimaCompra: ultimaCompra?.fecha };
+    }).sort((a, b) => b.totalGastado - a.totalGastado);
+
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h3 style="margin:0">🏪 Proveedores</h3>
+        <button class="btn btn-primary btn-sm" id="btn-new-proveedor">+ Nuevo proveedor</button>
+      </div>
+      ${stats.length === 0 ? '<div class="empty-state"><p>No hay proveedores registrados.</p></div>' :
+        stats.map(p => `
+          <div class="card" style="margin-bottom:0.5rem">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <strong>${p.nombre}</strong>
+                <div class="card-subtitle">${p.tipo || 'General'} ${p.telefono ? '· 📞 ' + p.telefono : ''}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:700">$${p.totalGastado.toFixed(2)}</div>
+                <div class="card-subtitle">${p.numCompras} compras${p.ultimaCompra ? ' · Última: ' + p.ultimaCompra : ''}</div>
+              </div>
+            </div>
+            <div style="margin-top:0.5rem">
+              <button class="btn btn-xs btn-outline btn-edit-prov" data-id="${p.id}">✏️ Editar</button>
+            </div>
+          </div>
+        `).join('')}`;
+
+    document.getElementById('btn-new-proveedor')?.addEventListener('click', () => showProveedorForm(fincaId));
+    container.querySelectorAll('.btn-edit-prov').forEach(btn => {
+      btn.addEventListener('click', () => showProveedorForm(fincaId, btn.dataset.id));
+    });
+  }
+
+  async function showProveedorForm(fincaId, proveedorId = null, onSaveCallback = null) {
+    let prov = null;
+    if (proveedorId) {
+      try { prov = await AgroDB.getById('proveedores', proveedorId); } catch(e) {}
+    }
+    const isEdit = !!prov;
+
+    const body = `
+      <div class="form-group">
+        <label>Nombre *</label>
+        <input type="text" id="prov-nombre" value="${prov?.nombre || ''}" placeholder="Nombre del proveedor" autofocus>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="tel" id="prov-telefono" value="${prov?.telefono || ''}" placeholder="Teléfono">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="prov-email" value="${prov?.email || ''}" placeholder="correo@ejemplo.com">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Ubicación</label>
+        <input type="text" id="prov-ubicacion" value="${prov?.ubicacion || ''}" placeholder="Ciudad, dirección...">
+      </div>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="prov-tipo">
+          <option value="insumos" ${prov?.tipo === 'insumos' ? 'selected' : ''}>Insumos</option>
+          <option value="herramientas" ${prov?.tipo === 'herramientas' ? 'selected' : ''}>Herramientas</option>
+          <option value="servicios" ${prov?.tipo === 'servicios' ? 'selected' : ''}>Servicios</option>
+          <option value="transporte" ${prov?.tipo === 'transporte' ? 'selected' : ''}>Transporte</option>
+          <option value="otro" ${prov?.tipo === 'otro' ? 'selected' : ''}>Otro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Notas</label>
+        <textarea id="prov-notas" placeholder="Observaciones sobre el proveedor">${prov?.notas || ''}</textarea>
+      </div>
+    `;
+
+    App.showModal(isEdit ? 'Editar Proveedor' : 'Nuevo Proveedor', body,
+      `<button class="btn btn-secondary" onclick="App.closeModal()">Cancelar</button>
+       <button class="btn btn-primary" id="btn-save-proveedor">Guardar</button>`);
+
+    document.getElementById('btn-save-proveedor').addEventListener('click', async () => {
+      const nombre = document.getElementById('prov-nombre').value.trim();
+      if (!nombre) { App.showToast('El nombre es obligatorio', 'warning'); return; }
+
+      const data = {
+        finca_id: fincaId,
+        nombre,
+        telefono: document.getElementById('prov-telefono').value.trim() || null,
+        email: document.getElementById('prov-email').value.trim() || null,
+        ubicacion: document.getElementById('prov-ubicacion').value.trim() || null,
+        tipo: document.getElementById('prov-tipo').value,
+        notas: document.getElementById('prov-notas').value.trim() || '',
+        activo: true
+      };
+
+      let saved = null;
+      if (isEdit) {
+        await AgroDB.update('proveedores', prov.id, data);
+        saved = { ...prov, ...data };
+      } else {
+        const id = await AgroDB.add('proveedores', data);
+        saved = { id, ...data };
+      }
+
+      App.closeModal();
+      App.showToast('Proveedor guardado', 'success');
+
+      if (onSaveCallback) {
+        onSaveCallback(saved);
+      } else {
+        App.refreshCurrentPage();
+      }
+    });
+  }
+
+  // ============================================
+  // Refresh active tab (for external calls)
+  // ============================================
+  function _refreshActiveTab() {
+    App.refreshCurrentPage();
+  }
+
+  return {
+    render,
+    showQuickCost,
+    showProveedorForm,
+    get _currentTab() { return _currentTab; },
+    set _currentTab(v) { _currentTab = v; },
+    _refreshActiveTab
+  };
 })();

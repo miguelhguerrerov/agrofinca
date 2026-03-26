@@ -2,7 +2,7 @@
 
 Sistema integral de gestión para fincas agroforestales. PWA offline-first construida con vanilla JavaScript, IndexedDB y Supabase.
 
-![Version](https://img.shields.io/badge/version-2.0.0-green)
+![Version](https://img.shields.io/badge/version-3.0.0-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![PWA](https://img.shields.io/badge/PWA-ready-brightgreen)
 
@@ -21,7 +21,10 @@ Sistema integral de gestión para fincas agroforestales. PWA offline-first const
 ### Producción
 - **Catálogo de cultivos**: Perennes, estacionales, frutales, hortalizas, leguminosas, etc.
 - **Ciclos productivos**: Seguimiento de siembra a cosecha con estados y fechas
-- **Cosechas**: Registro de cantidad, calidad y unidades por ciclo
+- **Policultivo**: Soporte para varios cultivos en la misma área con proporciones configurables
+- **Fases fenológicas**: Timeline visual para cultivos perennes (vivero, crecimiento, floración, producción)
+- **Cosechas**: Registro de cantidad, calidad y unidades por ciclo con rendimiento real (t/ha, kg/planta)
+- **Rendimiento vs ESPAC**: Comparación automática con datos de referencia nacional
 
 ### Actividades Especiales
 - **Apicultura**: Gestión de colmenas, inspecciones, seguimiento de reinas
@@ -29,9 +32,21 @@ Sistema integral de gestión para fincas agroforestales. PWA offline-first const
 - **Animales**: Lotes de animales, alimentación, producción, mortalidad
 
 ### Finanzas
-- **Ventas**: Registro con defaults inteligentes (último comprador, precio por producto)
-- **Costos**: Categorización por tipo (insumo, mano de obra, herramienta, etc.)
-- **Análisis financiero**: KPIs, comparación mensual/anual, tendencias de 12 meses
+- **Ventas**: Registro con defaults inteligentes, vinculación a cosechas, ciclos y clientes
+- **Costos**: Categorización fijo/variable, asignación a áreas y cultivos, distribución proporcional
+- **Directorio de clientes**: CRUD con stats (frecuencia, precio promedio, créditos pendientes)
+- **Directorio de proveedores**: CRUD con stats (total gastado, concentración, categorías)
+- **Activos depreciables**: Registro de herramientas/infraestructura con depreciación mensual automática
+- **Costos ocultos**: Visibilización de M.O. familiar + depreciación
+- **Cuentas por cobrar**: Seguimiento de ventas a crédito
+- **Análisis financiero** (7 pestañas):
+  - Resumen: KPIs, costos ocultos, tendencias 12 meses
+  - Por Cultivo: Rentabilidad con costos distribuidos (directos + área + generales)
+  - Por Área: Ganancia por m² y por ha, policultivo
+  - Rendimiento: Real vs ESPAC, kg/planta, calidad A/B/C
+  - Clientes: Quién paga mejor, frecuencia, estacionalidad
+  - Proveedores: Concentración, oportunidades de negociación
+  - Punto de Equilibrio: PE por cultivo, brecha de área, plantas adicionales necesarias
 - **Exportación CSV** (premium)
 - Selector de período: mes actual, trimestre, año, rango personalizado
 
@@ -93,7 +108,8 @@ agrofinca/
 │   │   ├── apicultura.js   # Gestión apícola
 │   │   ├── lombricompost.js# Lombricompostaje
 │   │   ├── animales.js     # Producción animal
-│   │   ├── asistente-ia.js # Asistente IA
+│   │   ├── asistente-ia.js # Asistente IA (7 tipos de acciones ejecutables)
+│   │   ├── activos.js      # Gestión de activos depreciables
 │   │   ├── configuracion.js# Ajustes y plan
 │   │   └── admin.js        # Panel de administración
 │   └── utils/

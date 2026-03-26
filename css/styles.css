@@ -39,6 +39,10 @@
   --topbar-height: 56px;
   --sidebar-width: 280px;
   --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --yellow-50: #FFFDE7;
+  --yellow-500: #FFC107;
+  --yellow-600: #FFB300;
+  --danger: #F44336;
 }
 
 /* --- Reset & Base --- */
@@ -254,7 +258,41 @@ input, select, textarea, button {
 .btn-outline:hover { background: var(--green-50); }
 .btn-sm { padding: 0.4rem 0.75rem; font-size: 0.82rem; }
 .btn-block { width: 100%; }
+.btn-xs { padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 4px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* --- Tabs --- */
+.tabs-row { display: flex; gap: 0; border-bottom: 2px solid var(--gray-300); margin-bottom: 1rem; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tab-btn {
+  background: none; border: none; padding: 0.6rem 1rem; font-size: 0.82rem; font-weight: 600;
+  color: var(--gray-500); cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent;
+  margin-bottom: -2px; transition: color var(--transition), border-color var(--transition);
+}
+.tab-btn:hover { color: var(--green-700); }
+.tab-btn.active { color: var(--green-700); border-bottom-color: var(--green-700); }
+
+/* --- Progress Bar (PE) --- */
+.pe-bar { height: 20px; background: var(--gray-100); border-radius: 10px; overflow: hidden; margin: 0.5rem 0; }
+.pe-bar-fill { height: 100%; border-radius: 10px; transition: width 0.5s ease; }
+.pe-bar-fill.above { background: var(--green-500); }
+.pe-bar-fill.near { background: var(--yellow-500); }
+.pe-bar-fill.below { background: var(--red-500); }
+
+/* --- Costos Ocultos Card --- */
+.hidden-costs-card {
+  background: var(--yellow-50); border-left: 4px solid var(--yellow-500);
+  padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;
+}
+
+/* --- Phase Timeline --- */
+.phase-timeline { margin: 0.5rem 0; }
+.phase-item {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0;
+  border-left: 3px solid var(--gray-300); padding-left: 0.75rem; margin-left: 0.5rem;
+}
+.phase-item.completed { border-left-color: var(--green-500); }
+.phase-item.in-progress { border-left-color: var(--yellow-500); }
+.phase-item.pending { border-left-color: var(--gray-300); }
 .icon-btn {
   background: none; border: none; font-size: 1.3rem; cursor: pointer;
   padding: 0.4rem; border-radius: var(--radius-sm);

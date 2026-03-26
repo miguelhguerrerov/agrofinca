@@ -284,13 +284,17 @@ const SupabaseClient = (() => {
     return await res.json();
   }
 
-  // Fetch user profile (plan, admin status)
+  // Fetch user profile (plan, admin status, rol)
   async function getUserProfile() {
     if (!accessToken) return null;
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?select=*`, {
-        headers: getHeaders()
-      });
+      // Must filter by own user ID since user_profiles_search policy allows seeing all profiles
+      const user = await getUser();
+      const uid = user?.id;
+      const url = uid
+        ? `${SUPABASE_URL}/rest/v1/user_profiles?select=*&id=eq.${uid}`
+        : `${SUPABASE_URL}/rest/v1/user_profiles?select=*&limit=1`;
+      const res = await fetch(url, { headers: getHeaders() });
       if (!res.ok) return null;
       const profiles = await res.json();
       return profiles[0] || null;

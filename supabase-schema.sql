@@ -842,6 +842,35 @@ GRANT ALL ON aplicaciones_fitosanitarias TO authenticated;
 GRANT ALL ON lotes_animales TO authenticated;
 GRANT ALL ON registros_animales TO authenticated;
 
+-- v3.0+ tables
+GRANT ALL ON clientes TO authenticated;
+GRANT ALL ON proveedores TO authenticated;
+GRANT ALL ON activos_finca TO authenticated;
+GRANT ALL ON area_cultivos TO authenticated;
+GRANT ALL ON depreciacion_mensual TO authenticated;
+GRANT ALL ON fases_fenologicas TO authenticated;
+GRANT ALL ON ai_conversations TO authenticated;
+GRANT ALL ON ai_chat_history TO authenticated;
+
+-- v4.0 engineer tables
+GRANT ALL ON ingeniero_agricultores TO authenticated;
+GRANT ALL ON protocolos_evaluacion TO authenticated;
+GRANT ALL ON productos_ingeniero TO authenticated;
+GRANT ALL ON ensayos TO authenticated;
+GRANT ALL ON ensayo_tratamientos TO authenticated;
+GRANT ALL ON ensayo_evaluaciones TO authenticated;
+GRANT ALL ON prescripciones TO authenticated;
+GRANT ALL ON ventas_insumos TO authenticated;
+GRANT ALL ON ventas_insumos_detalle TO authenticated;
+GRANT ALL ON programacion_inspecciones TO authenticated;
+GRANT ALL ON visitas_tecnicas TO authenticated;
+
+-- v4.0 chat tables
+GRANT ALL ON chat_grupos TO authenticated;
+GRANT ALL ON chat_grupo_miembros TO authenticated;
+GRANT ALL ON chat_conversaciones TO authenticated;
+GRANT ALL ON chat_mensajes TO authenticated;
+
 GRANT EXECUTE ON FUNCTION user_finca_ids() TO authenticated;
 
 -- ============================================================================
@@ -1381,6 +1410,11 @@ CREATE POLICY "cgm_select" ON chat_grupo_miembros FOR SELECT USING (
 DROP POLICY IF EXISTS "cgm_insert" ON chat_grupo_miembros;
 CREATE POLICY "cgm_insert" ON chat_grupo_miembros FOR INSERT WITH CHECK (
   grupo_id IN (SELECT id FROM chat_grupos WHERE ingeniero_id = auth.uid())
+);
+DROP POLICY IF EXISTS "cgm_update" ON chat_grupo_miembros;
+CREATE POLICY "cgm_update" ON chat_grupo_miembros FOR UPDATE USING (
+  grupo_id IN (SELECT id FROM chat_grupos WHERE ingeniero_id = auth.uid())
+  OR usuario_id = auth.uid()
 );
 DROP POLICY IF EXISTS "cgm_delete" ON chat_grupo_miembros;
 CREATE POLICY "cgm_delete" ON chat_grupo_miembros FOR DELETE USING (

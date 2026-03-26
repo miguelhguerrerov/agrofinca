@@ -57,10 +57,12 @@ const SyncEngine = (() => {
     'finca_miembros', 'areas', 'cultivos_catalogo', 'colmenas',
     'clientes', 'proveedores', 'activos_finca',
     'camas_lombricompost', 'lotes_animales',
-    'area_cultivos', 'ciclos_productivos',
+    'ciclos_productivos',                                          // BEFORE area_cultivos (FK dep)
+    'area_cultivos',
     'fases_fenologicas',
     'cosechas', 'ventas', 'costos', 'depreciacion_mensual',
     'inspecciones_colmena', 'registros_lombricompost',
+    'ai_conversations', 'ai_chat_history',                         // ADDED (conversation before history FK)
     'tareas', 'inspecciones',
     'fotos_inspeccion', 'aplicaciones_fitosanitarias', 'registros_animales',
     'ingeniero_agricultores', 'protocolos_evaluacion', 'productos_ingeniero', 'chat_grupos',
@@ -135,6 +137,9 @@ const SyncEngine = (() => {
     'chat_grupo_miembros',      // uses grupo_id + usuario_id
     'chat_conversaciones',      // uses participante_1 + participante_2
     'chat_mensajes',            // uses conversacion_id + emisor_id
+    'ensayo_tratamientos',      // uses ensayo_id (no finca_id)
+    'ensayo_evaluaciones',      // uses ensayo_id + tratamiento_id
+    'ventas_insumos_detalle',   // uses venta_id + producto_id
   ];
 
   function setStatusCallback(callback) {

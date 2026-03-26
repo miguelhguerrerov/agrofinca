@@ -32,6 +32,7 @@ const App = (() => {
     'ing-productos': () => IngProductosModule,
     'ing-ventas': () => IngVentasModule,
     'ing-chat': () => IngChatModule,
+    'mi-tecnico': () => MiTecnicoModule,
     'ing-calendario': () => IngCalendarioModule,
     'ing-reportes': () => IngReportesModule
   };
@@ -59,6 +60,7 @@ const App = (() => {
     'ing-productos': 'Productos',
     'ing-ventas': 'Ventas Insumos',
     'ing-chat': 'Chat',
+    'mi-tecnico': 'Mi Técnico',
     'ing-calendario': 'Calendario',
     'ing-reportes': 'Reportes'
   };
@@ -166,12 +168,16 @@ const App = (() => {
         if (parent) parent.style.display = isIng ? 'none' : '';
       });
     }
-    for (const id of ingNav) {
-      document.querySelectorAll(`[data-page="${id}"]`).forEach(el => {
-        const parent = el.closest('li, .nav-item');
-        if (parent) parent.style.display = isIng ? '' : 'none';
-      });
-    }
+    // Only toggle ing-nav items (not shared pages like ing-chat used by both roles)
+    document.querySelectorAll('.ing-nav').forEach(el => {
+      el.style.display = isIng ? '' : 'none';
+    });
+
+    // Hide "Mi Técnico" section for ingeniero (they ARE the técnico)
+    document.querySelectorAll('[data-page="mi-tecnico"]').forEach(el => {
+      const parent = el.closest('li');
+      if (parent) parent.style.display = isIng ? 'none' : '';
+    });
 
     // Hide bottom nav bar entirely for ingeniero
     const bottomNav = document.getElementById('bottom-nav');

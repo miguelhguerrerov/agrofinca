@@ -1,0 +1,210 @@
+// ============================================
+// AgroFinca - Mi Técnico (vista agricultor)
+// Citas programadas, visitas, inspecciones del ingeniero
+// ============================================
+
+const MiTecnicoModule = (() => {
+
+  async function render(container, fincaId) {
+    const userId = AuthModule.getUserId();
+
+    // Find affiliated engineer(s)
+    const afiliaciones = await AgroDB.query('ingeniero_agricultores',
+      r => r.agricultor_id === userId && r.estado === 'activo');
+
+    if (afiliaciones.length === 0) {
+      container.innerHTML = `
+        <div class="page-header"><h2>👨‍🔬 Mi Técnico</h2></div>
+        <div class="empty-state">
+          <div class="empty-icon">🔬</div>
+          <h3>Sin técnico afiliado</h3>
+          <p>Aún no tienes un ingeniero agrónomo vinculado a tu cuenta. Cuando un técnico te afilie, podrás ver sus visitas, inspecciones y recomendaciones aquí.</p>
+        </div>`;
+      return;
+    }
+
+    // Get engineer profiles
+    const ingenieros = [];
+    for (const af of afiliaciones) {
+      const profile = await AgroDB.getById('user_profiles', af.ingeniero_id);
+      if (profile) ingenieros.push({ ...profile, afiliacion: af });
+    }
+
+    // Get all data for this agricultor's fincas
+    const fincas = fincaId
+      ? [await AgroDB.getById('fincas', fincaId)].filter(Boolean)
+      : await AgroDB.query('fincas', r => r.propietario_id === userId);
+    const fincaIds = fincas.map(f => f.id);
+
+    // Upcoming visits (programacion_inspecciones)
+    const hoy = new Date().toISOString().slice(0, 10);
+    const allProgramacion = [];
+    for (const af of afiliaciones) {
+      const prog = await AgroDB.query('programacion_inspecciones',
+        r => r.ingeniero_id === af.ingeniero_id && fincaIds.includes(r.finca_id) && r.estado === 'activa');
+      allProgramacion.push(...prog);
+    }
+    const proximasVisitas = allProgramacion
+      .filter(p => p.proxima_visita)
+      .sort((a, b) => (a.proxima_visita || '').localeCompare(b.proxima_visita || ''));
+
+    // Past visits (visitas_tecnicas)
+    const allVisitas = [];
+    for (const af of afiliaciones) {
+      const vis = await AgroDB.query('visitas_tecnicas',
+        r => r.ingeniero_id === af.ingeniero_id && fincaIds.includes(r.finca_id));
+      allVisitas.push(...vis);
+    }
+    allVisitas.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+    // Inspections by engineer
+    const allInspecciones = [];
+    for (const af of afiliaciones) {
+      const insp = await AgroDB.query('inspecciones',
+        r => r.ingeniero_id === af.ingeniero_id && fincaIds.includes(r.finca_id));
+      allInspecciones.push(...insp);
+    }
+    allInspecciones.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+    // Prescriptions
+    const allPrescripciones = [];
+    for (const af of afiliaciones) {
+      const presc = await AgroDB.query('prescripciones',
+        r => r.ingeniero_id === af.ingeniero_id && fincaIds.includes(r.finca_id));
+      allPrescripciones.push(...presc);
+    }
+    const prescActivas = allPrescripciones.filter(p => p.estado === 'pendiente' || p.estado === 'en_ejecucion');
+
+    // Build tabs HTML
+    container.innerHTML = `
+      <div class="page-header">
+        <h2>👨‍🔬 Mi Técnico</h2>
+      </div>
+
+      <!-- Engineer info card -->
+      ${ingenieros.map(ing => `
+        <div class="card" style="border-left:4px solid var(--green-600);margin-bottom:1rem;">
+          <div style="display:flex;align-items:center;gap:0.75rem;">
+            <div style="width:48px;height:48px;border-radius:50%;background:var(--green-100);display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🔬</div>
+            <div>
+              <h3 style="margin:0;">${ing.nombre || ing.email || 'Ingeniero'}</h3>
+              <div class="text-sm text-muted">${ing.especialidad || 'Ingeniero Agrónomo'}</div>
+              ${ing.registro_profesional ? `<div class="text-sm text-muted">Reg. ${ing.registro_profesional}</div>` : ''}
+              <div class="text-sm text-muted">Afiliado desde ${ing.afiliacion.fecha_afiliacion ? new Date(ing.afiliacion.fecha_afiliacion).toLocaleDateString() : 'Reciente'}</div>
+            </div>
+            <button class="btn btn-sm btn-primary" style="margin-left:auto;" onclick="App.navigateTo('ing-chat')">💬 Chat</button>
+          </div>
+        </div>
+      `).join('')}
+
+      <!-- Tabs -->
+      <div class="form-row" style="gap:0;border-bottom:2px solid var(--gray-300);margin-bottom:1rem;">
+        <button class="btn btn-sm btn-outline mi-tec-tab active" data-tab="proximas" style="border-radius:8px 8px 0 0;">📅 Próximas visitas (${proximasVisitas.length})</button>
+        <button class="btn btn-sm btn-outline mi-tec-tab" data-tab="historial" style="border-radius:8px 8px 0 0;">📋 Historial visitas (${allVisitas.length})</button>
+        <button class="btn btn-sm btn-outline mi-tec-tab" data-tab="inspecciones" style="border-radius:8px 8px 0 0;">🔬 Inspecciones (${allInspecciones.length})</button>
+        <button class="btn btn-sm btn-outline mi-tec-tab" data-tab="recetas" style="border-radius:8px 8px 0 0;">💊 Recetas (${prescActivas.length})</button>
+      </div>
+
+      <!-- Tab: Próximas visitas -->
+      <div class="mi-tec-panel" id="mi-tec-proximas">
+        ${proximasVisitas.length === 0 ? '<p class="text-sm text-muted">No hay visitas programadas.</p>' :
+          proximasVisitas.map(p => {
+            const finca = fincas.find(f => f.id === p.finca_id);
+            const diasFalta = Math.ceil((new Date(p.proxima_visita) - new Date(hoy)) / 86400000);
+            const badge = diasFalta <= 0 ? 'badge-red' : diasFalta <= 3 ? 'badge-amber' : 'badge-green';
+            const label = diasFalta <= 0 ? 'Hoy / Atrasada' : diasFalta === 1 ? 'Mañana' : `En ${diasFalta} días`;
+            return `
+              <div class="card" style="margin-bottom:0.5rem;border-left:3px solid ${diasFalta <= 0 ? 'var(--red-500)' : diasFalta <= 3 ? 'var(--yellow-500)' : 'var(--green-500)'};">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <div>
+                    <div class="text-sm" style="font-weight:600;">📅 ${p.proxima_visita}</div>
+                    <div class="text-sm text-muted">🏡 ${finca?.nombre || 'Finca'} · ${p.frecuencia || 'programada'}</div>
+                  </div>
+                  <span class="badge ${badge}">${label}</span>
+                </div>
+              </div>`;
+          }).join('')}
+      </div>
+
+      <!-- Tab: Historial visitas -->
+      <div class="mi-tec-panel" id="mi-tec-historial" style="display:none;">
+        ${allVisitas.length === 0 ? '<p class="text-sm text-muted">No hay visitas registradas.</p>' :
+          allVisitas.slice(0, 30).map(v => {
+            const finca = fincas.find(f => f.id === v.finca_id);
+            const duracion = v.hora_llegada && v.hora_salida
+              ? `${v.hora_llegada} - ${v.hora_salida}`
+              : v.hora_llegada ? `Llegó: ${v.hora_llegada}` : '';
+            return `
+              <div class="card" style="margin-bottom:0.5rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <div>
+                    <div class="text-sm" style="font-weight:600;">📅 ${v.fecha}</div>
+                    <div class="text-sm text-muted">🏡 ${finca?.nombre || 'Finca'} · ${v.tipo || 'Visita'}</div>
+                    ${duracion ? `<div class="text-sm text-muted">🕐 ${duracion}</div>` : ''}
+                    ${v.resumen ? `<div class="text-sm" style="margin-top:0.25rem;">${v.resumen}</div>` : ''}
+                  </div>
+                  <span class="badge badge-green">✅</span>
+                </div>
+              </div>`;
+          }).join('')}
+      </div>
+
+      <!-- Tab: Inspecciones del técnico -->
+      <div class="mi-tec-panel" id="mi-tec-inspecciones" style="display:none;">
+        ${allInspecciones.length === 0 ? '<p class="text-sm text-muted">No hay inspecciones del técnico.</p>' :
+          allInspecciones.slice(0, 30).map(i => {
+            const estadoColor = i.estado_general === 'bueno' ? 'badge-green' :
+              i.estado_general === 'regular' ? 'badge-amber' : 'badge-red';
+            return `
+              <div class="card" style="margin-bottom:0.5rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <div>
+                    <div class="text-sm" style="font-weight:600;">🔬 ${i.fecha} · ${i.area_nombre || ''}</div>
+                    <div class="text-sm text-muted">${i.cultivo_nombre || ''} · ${i.tipo || 'General'}</div>
+                    ${i.plagas ? `<div class="text-sm" style="color:var(--red-600);">🐛 ${i.plagas}</div>` : ''}
+                    ${i.enfermedades ? `<div class="text-sm" style="color:var(--red-600);">🦠 ${i.enfermedades}</div>` : ''}
+                    ${i.recomendaciones ? `<div class="text-sm" style="color:var(--green-700);">💡 ${i.recomendaciones}</div>` : ''}
+                  </div>
+                  <span class="badge ${estadoColor}">${i.estado_general || 'N/A'}</span>
+                </div>
+              </div>`;
+          }).join('')}
+      </div>
+
+      <!-- Tab: Recetas/Prescripciones activas -->
+      <div class="mi-tec-panel" id="mi-tec-recetas" style="display:none;">
+        ${prescActivas.length === 0 ? '<p class="text-sm text-muted">No hay recetas activas.</p>' :
+          prescActivas.map(p => {
+            const finca = fincas.find(f => f.id === p.finca_id);
+            const estadoBadge = p.estado === 'pendiente' ? 'badge-amber' : 'badge-green';
+            return `
+              <div class="card" style="margin-bottom:0.5rem;border-left:3px solid ${p.estado === 'pendiente' ? 'var(--yellow-500)' : 'var(--green-500)'};">
+                <div>
+                  <div class="text-sm" style="font-weight:600;">💊 ${p.producto}</div>
+                  <div class="text-sm text-muted">🏡 ${finca?.nombre || ''} · Dosis: ${p.dosis || ''} ${p.unidad_dosis || ''}</div>
+                  <div class="text-sm text-muted">Método: ${p.metodo_aplicacion || 'N/A'} · Cada ${p.intervalo_dias || '?'} días · ${p.num_aplicaciones || 1} aplicaciones</div>
+                  ${p.carencia_dias ? `<div class="text-sm text-muted">⚠️ Carencia: ${p.carencia_dias} días antes de cosecha</div>` : ''}
+                  ${p.precauciones ? `<div class="text-sm" style="color:var(--red-600);">🛡️ ${p.precauciones}</div>` : ''}
+                  <div style="margin-top:0.5rem;">
+                    <span class="badge ${estadoBadge}">${p.estado}</span>
+                  </div>
+                </div>
+              </div>`;
+          }).join('')}
+      </div>
+    `;
+
+    // Tab switching
+    container.querySelectorAll('.mi-tec-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        container.querySelectorAll('.mi-tec-tab').forEach(t => t.classList.remove('active'));
+        container.querySelectorAll('.mi-tec-panel').forEach(p => p.style.display = 'none');
+        tab.classList.add('active');
+        const panel = document.getElementById(`mi-tec-${tab.dataset.tab}`);
+        if (panel) panel.style.display = 'block';
+      });
+    });
+  }
+
+  return { render };
+})();

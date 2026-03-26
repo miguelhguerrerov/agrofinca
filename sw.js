@@ -45,6 +45,7 @@ const STATIC_FILES = [
   './js/modules/ing-chat.js',
   './js/modules/ing-calendario.js',
   './js/modules/ing-reportes.js',
+  './js/modules/mi-tecnico.js',
   './icons/icon-192.svg',
   './icons/icon-512.svg',
   './manifest.json'

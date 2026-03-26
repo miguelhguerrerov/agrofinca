@@ -954,3 +954,8 @@ ALTER TABLE ventas ADD COLUMN IF NOT EXISTS fecha_cobro DATE;
 
 -- cosechas: add missing columns
 ALTER TABLE cosechas ADD COLUMN IF NOT EXISTS registrado_por TEXT;
+
+-- v3.1: New columns for improvements
+ALTER TABLE fases_fenologicas ADD COLUMN IF NOT EXISTS duracion_estimada_dias INTEGER;
+ALTER TABLE cultivos_catalogo ADD COLUMN IF NOT EXISTS fases_template JSONB;
+ALTER TABLE costos ADD COLUMN IF NOT EXISTS activo_id UUID;

@@ -241,8 +241,13 @@ const FinanzasModule = (() => {
       priceStats.push({ producto, unidad, promedio: avg, minimo: min, maximo: max, variacion: cv, ventas: precios.length });
     }
 
-    // Distributed costs (all 3 levels)
-    const costosDistribuidos = distribuirCostos(costos, areaCultivos, areas, cultivos);
+    // Split: operating costs vs capital expenditures (asset acquisitions)
+    const costosOperativos = costos.filter(c => c.categoria !== 'activo');
+    const costosCapital = costos.filter(c => c.categoria === 'activo');
+    const totalCapex = costosCapital.reduce((s, c) => s + (c.total || 0), 0);
+
+    // Distributed costs (all 3 levels) — only operating costs to avoid double-counting with depreciation
+    const costosDistribuidos = distribuirCostos(costosOperativos, areaCultivos, areas, cultivos);
 
     // Depreciation totals for period
     const rangeStart = range.start?.substring(0, 7) || '2000-01';
@@ -337,6 +342,7 @@ const FinanzasModule = (() => {
         renderResumen(tabContent, {
           totalIngresos, totalCostos, costosReales, costosFamiliares,
           gananciaReal, gananciaConFamiliar, roi, isPaid, totalDepreciacion, pendienteCobro,
+          totalCapex,
           cropAnalysis, cycleAnalysis, monthlyComparison,
           monthLabels, ingMensual, cosMensual, ganMensual,
           priceDatasets, priceMonthLabels, priceStats
@@ -349,7 +355,7 @@ const FinanzasModule = (() => {
         renderPorArea(tabContent, { areas, areaCultivos, cultivos, ventas, costos });
         break;
       case 'rendimiento':
-        renderRendimiento(tabContent, { ciclos, cosechas, cultivos, areas, areaCultivos });
+        renderRendimiento(tabContent, { ciclos, cosechas, cultivos, areas, areaCultivos, ventas, costosDistribuidos });
         break;
       case 'clientes':
         renderClientes(tabContent, { clientes, ventas, allVentas });
@@ -414,6 +420,13 @@ const FinanzasModule = (() => {
         <div>Depreciación: $${d.totalDepreciacion.toFixed(2)}</div>
         <div style="font-weight:700;margin-top:0.5rem">Total ocultos: $${(d.costosFamiliares + d.totalDepreciacion).toFixed(2)}</div>
       </div>
+
+      ${d.totalCapex > 0 ? `
+      <div class="card" style="background:var(--blue-50, #E3F2FD);border-left:4px solid var(--blue-500, #2196F3)">
+        <h4>🏗️ CAPEX (Inversión en Activos)</h4>
+        <div class="s-value">$${d.totalCapex.toFixed(2)}</div>
+        <div class="text-sm text-muted">Adquisición de activos en el período. No se incluye en costos operativos — la depreciación mensual ($${d.totalDepreciacion.toFixed(2)}) es el costo operativo correspondiente.</div>
+      </div>` : ''}
 
       ${d.pendienteCobro > 0 ? `
       <div class="card" style="background:var(--yellow-50);border-left:4px solid var(--amber-500)">
@@ -695,6 +708,11 @@ const FinanzasModule = (() => {
   function renderPorArea(el, d) {
     const { areas, areaCultivos, cultivos, ventas, costos } = d;
 
+    // Level 3: General costs (no area_id, no cultivo_id) distributed by m²
+    const costosGenerales = costos.filter(c => !c.area_id && !c.cultivo_id);
+    const totalGenerales = costosGenerales.reduce((s, c) => s + (c.total || 0), 0);
+    const totalFarmM2 = areas.reduce((s, a) => s + (a.area_m2 || 0), 0);
+
     const areaRows = [];
     for (const area of areas) {
       const shares = areaCultivos.filter(ac => ac.area_id === area.id && ac.activo);
@@ -707,17 +725,23 @@ const FinanzasModule = (() => {
 
       const cultivoIds = shares.map(sh => sh.cultivo_id);
       const areaIngresos = ventas.filter(v => cultivoIds.includes(v.cultivo_id)).reduce((s, v) => s + (v.total || 0), 0);
-      const areaCostosDir = costos.filter(c => c.area_id === area.id).reduce((s, c) => s + (c.total || 0), 0);
-      const cultivoCostosDir = costos.filter(c => cultivoIds.includes(c.cultivo_id) && !c.area_id).reduce((s, c) => s + (c.total || 0), 0);
-      const totalCostosArea = areaCostosDir + cultivoCostosDir;
 
-      const ganancia = areaIngresos - totalCostosArea;
+      // Level 1: Direct area costs
+      const costosDirectos = costos.filter(c => c.area_id === area.id).reduce((s, c) => s + (c.total || 0), 0);
+      // Level 2: Crop costs for this area's crops
+      const costosCompartidos = costos.filter(c => cultivoIds.includes(c.cultivo_id) && !c.area_id).reduce((s, c) => s + (c.total || 0), 0);
+      // Level 3: General costs proportional to m²
       const areaM2 = area.area_m2 || 0;
+      const generalShare = totalFarmM2 > 0 ? totalGenerales * (areaM2 / totalFarmM2) : 0;
+
+      const totalCostosArea = costosDirectos + costosCompartidos + generalShare;
+      const ganancia = areaIngresos - totalCostosArea;
       const areaHa = areaM2 / 10000;
 
       areaRows.push({
         nombre: area.nombre, areaM2, areaHa, cultivos: cultivosEnArea,
-        ingresos: areaIngresos, costos: totalCostosArea, ganancia,
+        ingresos: areaIngresos, costosDirectos, costosCompartidos, costosGenerales: generalShare,
+        costos: totalCostosArea, ganancia,
         gananciaPorM2: areaM2 > 0 ? ganancia / areaM2 : 0,
         gananciaPorHa: areaHa > 0 ? ganancia / areaHa : 0
       });
@@ -742,7 +766,19 @@ const FinanzasModule = (() => {
                 <div class="s-value text-green">$${a.ingresos.toFixed(2)}</div>
               </div>
               <div>
-                <div class="text-sm text-muted">Costos</div>
+                <div class="text-sm text-muted">C. Directos</div>
+                <div class="s-value text-red">$${a.costosDirectos.toFixed(2)}</div>
+              </div>
+              <div>
+                <div class="text-sm text-muted">C. Cultivos</div>
+                <div class="s-value text-red">$${a.costosCompartidos.toFixed(2)}</div>
+              </div>
+              <div>
+                <div class="text-sm text-muted">C. Generales</div>
+                <div class="s-value text-red">$${a.costosGenerales.toFixed(2)}</div>
+              </div>
+              <div>
+                <div class="text-sm text-muted">Total Costos</div>
                 <div class="s-value text-red">$${a.costos.toFixed(2)}</div>
               </div>
               <div>
@@ -751,7 +787,7 @@ const FinanzasModule = (() => {
               </div>
               <div>
                 <div class="text-sm text-muted">$/m²</div>
-                <div class="s-value">$${a.gananciaPorM2.toFixed(2)}</div>
+                <div class="s-value">$${a.gananciaPorM2.toFixed(4)}</div>
               </div>
               <div>
                 <div class="text-sm text-muted">$/ha</div>
@@ -768,7 +804,7 @@ const FinanzasModule = (() => {
   // TAB: Rendimiento
   // ══════════════════════════════════════════
   function renderRendimiento(el, d) {
-    const { ciclos, cosechas, cultivos, areas, areaCultivos } = d;
+    const { ciclos, cosechas, cultivos, areas, areaCultivos, ventas, costosDistribuidos } = d;
 
     const rendRows = [];
     for (const ciclo of ciclos) {
@@ -789,10 +825,25 @@ const FinanzasModule = (() => {
       const refTha = cultivo.rendimiento_ref_tha || null;
       const cumplimiento = refTha ? (tPorHa / refTha * 100) : null;
 
+      // Cost allocation to this cycle's harvests (proportional by kg)
+      const dist = costosDistribuidos?.[ciclo.cultivo_id];
+      const cultivoTotalKg = cosechas.filter(c => c.cultivo_id === ciclo.cultivo_id)
+        .reduce((s, c) => s + convertToKg(c.cantidad, c.unidad), 0);
+      const kgFraction = cultivoTotalKg > 0 ? totalKg / cultivoTotalKg : 0;
+      const costoAsignado = dist ? dist.total * kgFraction : 0;
+      const costoPorKg = totalKg > 0 ? costoAsignado / totalKg : 0;
+
+      // Revenue for this cycle's harvests
+      const cicloVentas = (ventas || []).filter(v => v.ciclo_id === ciclo.id || (v.cultivo_id === ciclo.cultivo_id && !v.ciclo_id));
+      const ingresosCiclo = cicloVentas.reduce((s, v) => s + (v.total || 0), 0);
+      const ingresoPorKg = totalKg > 0 ? ingresosCiclo / totalKg : 0;
+      const margenPorKg = ingresoPorKg - costoPorKg;
+
       rendRows.push({
         cultivo: cultivo.nombre, icono: cultivo.icono || '🌱',
         ciclo: ciclo.nombre || ciclo.id.substring(0, 8),
-        estado: ciclo.estado, tPorHa, kgPorPlanta, refTha, cumplimiento
+        estado: ciclo.estado, tPorHa, kgPorPlanta, refTha, cumplimiento,
+        costoAsignado, costoPorKg, ingresoPorKg, margenPorKg, totalKg
       });
     }
 
@@ -813,7 +864,7 @@ const FinanzasModule = (() => {
         <div class="table-responsive">
           <table class="data-table">
             <thead>
-              <tr><th>Cultivo</th><th>Ciclo</th><th>Real (t/ha)</th><th>Ref. ESPAC</th><th>% Cumplimiento</th><th>kg/planta</th><th>Status</th></tr>
+              <tr><th>Cultivo</th><th>Ciclo</th><th>Real (t/ha)</th><th>Ref.</th><th>%</th><th>kg/pl</th><th>$/kg costo</th><th>$/kg ingr.</th><th>Margen/kg</th><th>Status</th></tr>
             </thead>
             <tbody>
               ${rendRows.map(r => {
@@ -833,6 +884,9 @@ const FinanzasModule = (() => {
                   <td>${r.refTha !== null ? r.refTha.toFixed(2) : '-'}</td>
                   <td>${r.cumplimiento !== null ? `<span class="badge ${r.cumplimiento >= 100 ? 'badge-green' : r.cumplimiento >= 70 ? 'badge-amber' : 'badge-red'}">${r.cumplimiento.toFixed(1)}%</span>` : '-'}</td>
                   <td>${r.kgPorPlanta !== null ? r.kgPorPlanta.toFixed(2) : '-'}</td>
+                  <td>$${r.costoPorKg.toFixed(2)}</td>
+                  <td>$${r.ingresoPorKg.toFixed(2)}</td>
+                  <td class="${r.margenPorKg >= 0 ? 'text-green' : 'text-red'}">$${r.margenPorKg.toFixed(2)}</td>
                   <td>${statusBadge}</td>
                 </tr>`;
               }).join('')}

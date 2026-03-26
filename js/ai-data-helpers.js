@@ -11,9 +11,14 @@ const AIDataHelpers = (() => {
     try {
       const finca = await AgroDB.getById('fincas', fincaId);
       const areas = await AgroDB.getByIndex('areas', 'finca_id', fincaId);
-      const cultivos = await AgroDB.getByIndex('cultivos_catalogo', 'finca_id', fincaId);
       const ciclos = await AgroDB.getByIndex('ciclos_productivos', 'finca_id', fincaId);
       const activos = ciclos.filter(c => c.estado === 'activo');
+      const cultivoIdsActivos = [...new Set(activos.map(c => c.cultivo_id).filter(Boolean))];
+      const cultivosActivos = [];
+      for (const id of cultivoIdsActivos) {
+        const cult = await AgroDB.getById('cultivos_catalogo', id);
+        if (cult) cultivosActivos.push(cult);
+      }
 
       return {
         finca: finca?.nombre || '',
@@ -21,7 +26,7 @@ const AIDataHelpers = (() => {
         area_total_m2: finca?.area_total_m2 || 0,
         sistema_riego: finca?.sistema_riego || 'no especificado',
         areas: areas.map(a => ({ nombre: a.nombre, tipo: a.tipo, m2: a.area_m2, cultivo: a.cultivo_actual_nombre })),
-        cultivos: cultivos.map(c => ({ nombre: c.nombre, tipo: c.tipo, ciclo_dias: c.ciclo_dias })),
+        cultivos: cultivosActivos.map(c => ({ nombre: c.nombre, tipo: c.tipo, ciclo_dias: c.ciclo_dias })),
         ciclos_activos: activos.map(c => ({
           cultivo: c.cultivo_nombre, area: c.area_nombre,
           inicio: c.fecha_inicio, estado: c.estado
@@ -42,7 +47,11 @@ const AIDataHelpers = (() => {
       const costos = await AgroDB.getByIndex('costos', 'finca_id', fincaId);
       const inspecciones = await AgroDB.getByIndex('inspecciones', 'finca_id', fincaId);
 
-      return cultivos.map(c => {
+      const cultivosConCiclos = cultivos.filter(c =>
+        ciclos.some(x => x.cultivo_id === c.id)
+      );
+
+      return cultivosConCiclos.map(c => {
         const cCiclos = ciclos.filter(x => x.cultivo_id === c.id);
         const cCosechas = cosechas.filter(x => x.cultivo_id === c.id);
         const cVentas = ventas.filter(x => x.cultivo_id === c.id);

@@ -77,11 +77,11 @@ const SyncEngine = (() => {
     fincas: ['id', 'nombre', 'ubicacion', 'descripcion', 'area_total_m2', 'sistema_riego', 'latitud', 'longitud', 'propietario_id', 'modificado_por', 'created_at', 'updated_at'],
     finca_miembros: ['id', 'finca_id', 'usuario_id', 'usuario_email', 'rol', 'invitado_por', 'estado_invitacion', 'created_at', 'updated_at'],
     areas: ['id', 'finca_id', 'nombre', 'tipo', 'area_m2', 'cultivo_actual_id', 'cultivo_actual_nombre', 'geojson', 'latitud', 'longitud', 'color', 'notas', 'created_at', 'updated_at'],
-    cultivos_catalogo: ['id', 'finca_id', 'nombre', 'tipo', 'unidad_produccion', 'ciclo_dias', 'color', 'icono', 'descripcion', 'es_predeterminado', 'rendimiento_referencia', 'unidad_rendimiento', 'created_at', 'updated_at'],
+    cultivos_catalogo: ['id', 'finca_id', 'nombre', 'tipo', 'unidad_produccion', 'ciclo_dias', 'color', 'icono', 'descripcion', 'es_predeterminado', 'rendimiento_referencia', 'unidad_rendimiento', 'fases_template', 'created_at', 'updated_at'],
     ciclos_productivos: ['id', 'finca_id', 'area_id', 'cultivo_id', 'cultivo_nombre', 'area_nombre', 'nombre', 'fecha_inicio', 'fecha_fin', 'fecha_fin_estimada', 'fecha_fin_real', 'estado', 'tipo_ciclo', 'cantidad_plantas', 'ciclo_dias', 'notas', 'created_at', 'updated_at'],
     cosechas: ['id', 'finca_id', 'ciclo_id', 'cultivo_id', 'cultivo_nombre', 'area_id', 'fecha', 'cantidad', 'unidad', 'calidad', 'notas', 'registrado_por', 'created_at', 'updated_at'],
     ventas: ['id', 'finca_id', 'cultivo_id', 'cultivo_nombre', 'producto', 'fecha', 'cantidad', 'unidad', 'precio_unitario', 'total', 'comprador', 'cliente_id', 'ciclo_id', 'area_id', 'cosecha_id', 'forma_pago', 'cobrado', 'fecha_cobro', 'notas', 'registrado_por', 'created_at', 'updated_at'],
-    costos: ['id', 'finca_id', 'cultivo_id', 'cultivo_nombre', 'ciclo_id', 'area_id', 'categoria', 'subcategoria', 'tipo_costo', 'fecha', 'total', 'cantidad', 'unidad', 'costo_unitario', 'descripcion', 'proveedor', 'proveedor_id', 'es_mano_obra_familiar', 'notas', 'registrado_por', 'created_at', 'updated_at'],
+    costos: ['id', 'finca_id', 'cultivo_id', 'cultivo_nombre', 'ciclo_id', 'area_id', 'categoria', 'subcategoria', 'tipo_costo', 'fecha', 'total', 'cantidad', 'unidad', 'costo_unitario', 'descripcion', 'proveedor', 'proveedor_id', 'activo_id', 'es_mano_obra_familiar', 'notas', 'registrado_por', 'created_at', 'updated_at'],
     colmenas: ['id', 'finca_id', 'nombre', 'tipo', 'estado', 'ubicacion', 'fecha_instalacion', 'notas', 'created_at', 'updated_at'],
     inspecciones_colmena: ['id', 'finca_id', 'colmena_id', 'fecha', 'tipo', 'estado_general', 'poblacion', 'reina_vista', 'crias', 'miel', 'plagas', 'notas', 'created_at', 'updated_at'],
     camas_lombricompost: ['id', 'finca_id', 'nombre', 'tipo', 'estado', 'ubicacion', 'fecha_inicio', 'notas', 'created_at', 'updated_at'],
@@ -99,7 +99,7 @@ const SyncEngine = (() => {
     depreciacion_mensual: ['id', 'finca_id', 'activo_id', 'mes', 'monto', 'area_id', 'cultivo_id', 'created_at', 'updated_at'],
     clientes: ['id', 'finca_id', 'nombre', 'telefono', 'email', 'ubicacion', 'tipo', 'notas', 'activo', 'created_at', 'updated_at'],
     proveedores: ['id', 'finca_id', 'nombre', 'telefono', 'email', 'ubicacion', 'tipo', 'productos_frecuentes', 'notas', 'activo', 'created_at', 'updated_at'],
-    fases_fenologicas: ['id', 'finca_id', 'ciclo_id', 'nombre', 'orden', 'fecha_inicio', 'fecha_fin', 'estado', 'genera_ingresos', 'descripcion', 'notas', 'created_at', 'updated_at']
+    fases_fenologicas: ['id', 'finca_id', 'ciclo_id', 'nombre', 'orden', 'fecha_inicio', 'fecha_fin', 'estado', 'genera_ingresos', 'duracion_estimada_dias', 'descripcion', 'notas', 'created_at', 'updated_at']
   };
 
   // Tables that DON'T have finca_id column

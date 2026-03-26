@@ -145,21 +145,51 @@ const ProduccionModule = (() => {
         const fases = await AgroDB.query('fases_fenologicas', r => r.ciclo_id === c.id);
         const sortedFases = fases.sort((a, b) => (a.orden || 0) - (b.orden || 0));
         if (sortedFases.length > 0) {
+          // Calculate predicted dates cumulatively
+          let cumulativeDays = 0;
+          for (const f of sortedFases) {
+            f._predictedStart = DateUtils.addDays(c.fecha_inicio, cumulativeDays);
+            cumulativeDays += (f.duracion_estimada_dias || 0);
+            f._predictedEnd = DateUtils.addDays(c.fecha_inicio, cumulativeDays);
+          }
+
           fasesHTML = `
             <div style="margin-top:0.5rem;border-top:1px solid var(--gray-200);padding-top:0.5rem">
               <div style="font-size:0.8rem;font-weight:600;margin-bottom:0.25rem">Fases fenológicas</div>
               ${sortedFases.map(f => {
-                const color = f.estado === 'completada' ? 'var(--green-600)' :
-                              f.estado === 'en_curso' ? 'var(--yellow-600)' : 'var(--gray-400)';
+                const estimated = f.duracion_estimada_dias || 0;
+                let actualDays = 0;
+                if (f.fecha_inicio && f.estado === 'completada' && f.fecha_fin) {
+                  actualDays = DateUtils.daysBetween(f.fecha_inicio, f.fecha_fin);
+                } else if (f.fecha_inicio && f.estado === 'en_curso') {
+                  actualDays = DateUtils.daysBetween(f.fecha_inicio, DateUtils.today());
+                }
+                const ratio = estimated > 0 ? actualDays / estimated : 0;
+                const progressPct = estimated > 0 ? Math.min(Math.round((actualDays / estimated) * 100), 100) : 0;
+                // Color: green (on time), amber (<=120%), red (exceeded)
+                const barColor = ratio > 1.2 ? 'var(--red-500, #F44336)' : ratio > 1.0 ? 'var(--amber-500, #FFA000)' : 'var(--green-500, #4CAF50)';
+                const borderColor = f.estado === 'completada' ? 'var(--green-600)' :
+                              f.estado === 'en_curso' ? (ratio > 1.2 ? 'var(--red-500, #F44336)' : ratio > 1.0 ? 'var(--amber-500, #FFA000)' : 'var(--yellow-600)') : 'var(--gray-400)';
                 const icon = f.genera_ingresos ? '💰' : '🌱';
                 return `
-                  <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-left:3px solid ${color};padding-left:0.75rem;margin-left:0.5rem">
+                  <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-left:3px solid ${borderColor};padding-left:0.75rem;margin-left:0.5rem">
                     <span>${icon}</span>
-                    <div>
+                    <div style="flex:1;min-width:0">
                       <div style="font-weight:600;font-size:0.85rem">${f.nombre}</div>
                       <div style="font-size:0.75rem;color:var(--gray-500)">${f.estado === 'completada' ? '✅ Completada' : f.estado === 'en_curso' ? '⏳ En curso' : '⏸️ Pendiente'}${f.fecha_inicio ? ' · Inicio: ' + f.fecha_inicio : ''}</div>
+                      <div style="font-size:0.7rem;color:var(--gray-400)">Previsto: ${f._predictedStart || '—'} → ${f._predictedEnd || '—'}${estimated > 0 ? ' (' + estimated + ' días)' : ''}</div>
+                      ${estimated > 0 && (f.estado === 'en_curso' || f.estado === 'completada') ? `
+                        <div style="display:flex;align-items:center;gap:0.35rem;margin-top:0.2rem">
+                          <div style="flex:1;height:6px;background:var(--gray-200);border-radius:3px;overflow:hidden">
+                            <div style="width:${progressPct}%;height:100%;background:${barColor};border-radius:3px;transition:width 0.3s"></div>
+                          </div>
+                          <span style="font-size:0.7rem;color:var(--gray-500);white-space:nowrap">${actualDays}/${estimated}d</span>
+                        </div>` : ''}
                     </div>
-                    ${f.estado !== 'completada' ? `<button class="btn btn-xs btn-outline" style="margin-left:auto" onclick="ProduccionModule.avanzarFase('${c.id}', '${f.id}')">${f.estado === 'en_curso' ? '✅ Completar' : '▶️ Iniciar'}</button>` : ''}
+                    <div style="display:flex;gap:0.25rem;margin-left:auto;flex-shrink:0">
+                      <button class="btn btn-xs btn-outline btn-edit-fase" data-ciclo-id="${c.id}" data-fase-id="${f.id}" title="Editar fase">✏️</button>
+                      ${f.estado !== 'completada' ? `<button class="btn btn-xs btn-outline" onclick="ProduccionModule.avanzarFase('${c.id}', '${f.id}')">${f.estado === 'en_curso' ? '✅ Completar' : '▶️ Iniciar'}</button>` : ''}
+                    </div>
                   </div>`;
               }).join('')}
             </div>`;
@@ -209,6 +239,11 @@ const ProduccionModule = (() => {
           height: 10
         });
       }
+    });
+
+    // Edit fase buttons
+    el.querySelectorAll('.btn-edit-fase').forEach(btn => {
+      btn.addEventListener('click', () => showEditFaseForm(btn.dataset.faseId));
     });
 
     el.querySelector('#btn-new-ciclo')?.addEventListener('click', () => showCicloForm(fincaId, cultivos, areas));
@@ -354,6 +389,7 @@ const ProduccionModule = (() => {
         <label>Proporción del área (%)</label>
         <input class="form-input" type="number" id="ciclo-proporcion" min="1" max="100" value="100" step="1">
         <span class="form-hint">Porcentaje del área que ocupa este cultivo</span>
+        <span id="ciclo-proporcion-error" style="display:none;color:var(--red-500, #F44336);font-size:0.8rem;margin-top:0.2rem;"></span>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -398,7 +434,20 @@ const ProduccionModule = (() => {
       }
     });
 
+    // Recalculate fecha_fin when fecha_inicio changes
+    document.getElementById('ciclo-inicio').addEventListener('change', () => {
+      const cultivoSel = document.getElementById('ciclo-cultivo');
+      const dias = parseInt(cultivoSel.selectedOptions[0]?.dataset.dias) || 0;
+      if (dias > 0) {
+        const inicio = document.getElementById('ciclo-inicio').value;
+        document.getElementById('ciclo-fin-est').value = DateUtils.addDays(inicio, dias);
+      }
+    });
+
     // Area change handler: show policultivo info
+    const propErrorEl = document.getElementById('ciclo-proporcion-error');
+    const saveCicloBtn = document.getElementById('btn-save-ciclo');
+
     document.getElementById('ciclo-area').addEventListener('change', async (e) => {
       const selectedAreaId = e.target.value;
       const policultDiv = document.getElementById('ciclo-policultivo');
@@ -407,19 +456,23 @@ const ProduccionModule = (() => {
       if (!selectedAreaId) {
         if (policultDiv) policultDiv.innerHTML = '';
         if (propInput) { propInput.max = 100; propInput.value = 100; }
+        propErrorEl.style.display = 'none';
+        saveCicloBtn.disabled = false;
         return;
       }
 
       // Show existing crops in this area (policultivo)
       const shares = await getAreaCropShares(selectedAreaId);
-      if (policultDiv && shares.length > 0) {
+      // When editing, exclude current ciclo's proportion
+      const filteredShares = isEdit ? shares.filter(sh => sh.ciclo_id !== ciclo.id) : shares;
+      if (policultDiv && filteredShares.length > 0) {
         const catalogoCultivos = await AgroDB.getByIndex('cultivos_catalogo', 'finca_id', fincaId);
-        const usedPct = shares.reduce((s, sh) => s + (sh.proporcion || 0), 0) * 100;
+        const usedPct = filteredShares.reduce((s, sh) => s + (sh.proporcion || 0), 0) * 100;
         policultDiv.innerHTML = `
           <div style="background:var(--yellow-50);padding:0.75rem;border-radius:8px;margin-bottom:0.5rem">
             <strong>🌿 Policultivo detectado</strong>
             <div style="margin-top:0.5rem;font-size:0.85rem">
-              ${shares.map(sh => {
+              ${filteredShares.map(sh => {
                 const c = catalogoCultivos.find(x => x.id === sh.cultivo_id);
                 return `${c?.nombre || 'Cultivo'}: ${Math.round((sh.proporcion || 0) * 100)}%`;
               }).join(' · ')}
@@ -427,12 +480,32 @@ const ProduccionModule = (() => {
             <div style="margin-top:0.5rem;font-size:0.85rem">Disponible: ${Math.round((1 - usedPct/100) * 100)}%</div>
           </div>`;
         // Set max for proportion input
-        if (propInput) propInput.max = Math.round((1 - usedPct/100) * 100);
+        const maxProp = Math.round((1 - usedPct/100) * 100);
+        if (propInput) propInput.max = maxProp;
       } else {
         if (policultDiv) policultDiv.innerHTML = '';
         if (propInput) { propInput.max = 100; propInput.value = 100; }
       }
+      // Re-validate proportion
+      validateProporcion();
     });
+
+    // Proportion validation on input
+    function validateProporcion() {
+      const propInput = document.getElementById('ciclo-proporcion');
+      const val = parseInt(propInput.value) || 0;
+      const max = parseInt(propInput.max) || 100;
+      if (val > max) {
+        propErrorEl.textContent = `Excede el máximo disponible (${max}%)`;
+        propErrorEl.style.display = 'block';
+        saveCicloBtn.disabled = true;
+      } else {
+        propErrorEl.style.display = 'none';
+        saveCicloBtn.disabled = false;
+      }
+    }
+
+    document.getElementById('ciclo-proporcion').addEventListener('input', validateProporcion);
 
     // Trigger area change if editing and area is pre-selected
     if (ciclo?.area_id) {
@@ -443,6 +516,11 @@ const ProduccionModule = (() => {
       const cultivoSel = document.getElementById('ciclo-cultivo');
       const areaSel = document.getElementById('ciclo-area');
       if (!cultivoSel.value) { App.showToast('Selecciona un cultivo', 'warning'); return; }
+
+      // Strict proportion guard
+      const proporcionVal = parseInt(document.getElementById('ciclo-proporcion').value) || 100;
+      const maxProp = parseInt(document.getElementById('ciclo-proporcion').max) || 100;
+      if (proporcionVal > maxProp) { App.showToast(`La proporción excede el máximo disponible (${maxProp}%)`, 'error'); return; }
 
       const cultivoOpt = cultivoSel.selectedOptions[0];
       const areaOpt = areaSel.selectedOptions[0];
@@ -490,15 +568,31 @@ const ProduccionModule = (() => {
           });
         }
 
-        // Auto-create default fases fenológicas for perennial cycles
+        // Auto-create fases fenológicas for perennial cycles
         if (data.tipo_ciclo === 'perenne') {
-          const fasesDefault = [
-            { nombre: 'Vivero/Germinación', orden: 1, genera_ingresos: false, descripcion: 'Preparación de plántulas' },
-            { nombre: 'Crecimiento vegetativo', orden: 2, genera_ingresos: false, descripcion: 'Desarrollo de la planta' },
-            { nombre: 'Primera floración', orden: 3, genera_ingresos: false, descripcion: 'Inicio de floración' },
-            { nombre: 'Producción', orden: 4, genera_ingresos: true, descripcion: 'Fase productiva con cosechas recurrentes' }
-          ];
-          for (const fase of fasesDefault) {
+          let fasesToCreate = [];
+          // Check if cultivo has custom fases_template
+          let customTemplate = [];
+          try { customTemplate = JSON.parse(cultivoData?.fases_template || '[]'); } catch { customTemplate = []; }
+
+          if (customTemplate.length > 0) {
+            fasesToCreate = customTemplate.map(ft => ({
+              nombre: ft.nombre,
+              orden: ft.orden,
+              duracion_estimada_dias: ft.duracion_estimada_dias || 0,
+              genera_ingresos: !!ft.genera_ingresos,
+              descripcion: ''
+            }));
+          } else {
+            fasesToCreate = [
+              { nombre: 'Vivero/Germinación', orden: 1, genera_ingresos: false, descripcion: 'Preparación de plántulas' },
+              { nombre: 'Crecimiento vegetativo', orden: 2, genera_ingresos: false, descripcion: 'Desarrollo de la planta' },
+              { nombre: 'Primera floración', orden: 3, genera_ingresos: false, descripcion: 'Inicio de floración' },
+              { nombre: 'Producción', orden: 4, genera_ingresos: true, descripcion: 'Fase productiva con cosechas recurrentes' }
+            ];
+          }
+
+          for (const fase of fasesToCreate) {
             await AgroDB.add('fases_fenologicas', {
               finca_id: fincaId,
               ciclo_id: newCicloId,
@@ -693,6 +787,13 @@ const ProduccionModule = (() => {
         <label>Descripción</label>
         <textarea id="cult-desc" placeholder="Características del cultivo">${cultivo?.descripcion || ''}</textarea>
       </div>
+
+      <div id="fases-template-section" style="display:${(cultivo?.ciclo_dias === 0 || !cultivo?.ciclo_dias) ? 'block' : 'none'};background:var(--blue-50, #E3F2FD);padding:0.75rem;border-radius:var(--radius-sm);margin-bottom:1rem;">
+        <div style="font-weight:600;margin-bottom:0.5rem">🌿 Fases fenológicas personalizadas</div>
+        <span class="form-hint" style="display:block;margin-bottom:0.5rem">Define las fases que se crearán automáticamente en ciclos perennes de este cultivo.</span>
+        <div id="fases-template-list"></div>
+        <button type="button" class="btn btn-sm btn-outline" id="btn-add-fase-template">+ Agregar fase</button>
+      </div>
     `;
     App.showModal(isEdit ? 'Editar Cultivo' : 'Nuevo Tipo de Cultivo', body,
       `<button class="btn btn-secondary" onclick="App.closeModal()">Cancelar</button>
@@ -728,6 +829,55 @@ const ProduccionModule = (() => {
       }
     });
 
+    // Fases template logic: show/hide based on ciclo_dias
+    const fasesSection = document.getElementById('fases-template-section');
+    const fasesListEl = document.getElementById('fases-template-list');
+    const cultDiasInput = document.getElementById('cult-dias');
+
+    cultDiasInput.addEventListener('input', () => {
+      const dias = parseInt(cultDiasInput.value) || 0;
+      fasesSection.style.display = dias === 0 ? 'block' : 'none';
+    });
+
+    // Populate existing fases_template
+    let fasesTemplateData = [];
+    try { fasesTemplateData = JSON.parse(cultivo?.fases_template || '[]'); } catch { fasesTemplateData = []; }
+
+    function renderFasesTemplateRows() {
+      fasesListEl.innerHTML = fasesTemplateData.map((ft, idx) => `
+        <div class="fases-tmpl-row" style="display:flex;gap:0.35rem;align-items:center;margin-bottom:0.35rem;" data-idx="${idx}">
+          <input type="text" class="ft-nombre" value="${ft.nombre || ''}" placeholder="Nombre fase" style="flex:2;">
+          <input type="number" class="ft-duracion" value="${ft.duracion_estimada_dias || ''}" placeholder="Días" min="0" style="flex:1;max-width:70px;">
+          <label style="display:flex;align-items:center;gap:0.2rem;font-size:0.8rem;white-space:nowrap;">
+            <input type="checkbox" class="ft-ingresos" ${ft.genera_ingresos ? 'checked' : ''}> $
+          </label>
+          <button type="button" class="btn btn-xs btn-danger ft-delete" data-idx="${idx}">🗑</button>
+        </div>
+      `).join('');
+
+      fasesListEl.querySelectorAll('.ft-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+          fasesTemplateData.splice(parseInt(btn.dataset.idx), 1);
+          renderFasesTemplateRows();
+        });
+      });
+
+      // Sync changes back to data on input
+      fasesListEl.querySelectorAll('.fases-tmpl-row').forEach(row => {
+        const idx = parseInt(row.dataset.idx);
+        row.querySelector('.ft-nombre').addEventListener('input', (e) => { fasesTemplateData[idx].nombre = e.target.value; });
+        row.querySelector('.ft-duracion').addEventListener('input', (e) => { fasesTemplateData[idx].duracion_estimada_dias = parseInt(e.target.value) || 0; });
+        row.querySelector('.ft-ingresos').addEventListener('change', (e) => { fasesTemplateData[idx].genera_ingresos = e.target.checked; });
+      });
+    }
+
+    renderFasesTemplateRows();
+
+    document.getElementById('btn-add-fase-template').addEventListener('click', () => {
+      fasesTemplateData.push({ nombre: '', orden: fasesTemplateData.length + 1, duracion_estimada_dias: 0, genera_ingresos: false });
+      renderFasesTemplateRows();
+    });
+
     document.getElementById('btn-save-cultivo').addEventListener('click', async () => {
       const nombre = document.getElementById('cult-nombre').value.trim();
       if (!nombre) { App.showToast('El nombre es obligatorio', 'warning'); return; }
@@ -743,7 +893,10 @@ const ProduccionModule = (() => {
         rendimiento_referencia: parseFloat(document.getElementById('cult-rendimiento').value) || null,
         unidad_rendimiento: document.getElementById('cult-unidad-rend').value || 't/ha',
         descripcion: document.getElementById('cult-desc').value.trim(),
-        es_predeterminado: false
+        es_predeterminado: false,
+        fases_template: JSON.stringify(fasesTemplateData.filter(ft => ft.nombre).map((ft, i) => ({
+          nombre: ft.nombre, orden: i + 1, duracion_estimada_dias: ft.duracion_estimada_dias || 0, genera_ingresos: !!ft.genera_ingresos
+        })))
       };
 
       if (isEdit) await AgroDB.update('cultivos_catalogo', cultivo.id, data);
@@ -751,6 +904,53 @@ const ProduccionModule = (() => {
 
       App.closeModal();
       App.showToast('Cultivo guardado', 'success');
+      App.refreshCurrentPage();
+    });
+  }
+
+  // ---- Edit Fase Fenológica Form ----
+  async function showEditFaseForm(faseId) {
+    const fase = await AgroDB.getById('fases_fenologicas', faseId);
+    if (!fase) return;
+
+    const body = `
+      <div class="form-group">
+        <label>Nombre *</label>
+        <input type="text" id="edit-fase-nombre" value="${fase.nombre || ''}">
+      </div>
+      <div class="form-group">
+        <label>Duración estimada (días)</label>
+        <input type="number" id="edit-fase-duracion" value="${fase.duracion_estimada_dias || ''}" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Descripción</label>
+        <textarea id="edit-fase-desc" rows="2">${fase.descripcion || ''}</textarea>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:0.5rem;">
+          <input type="checkbox" id="edit-fase-ingresos" ${fase.genera_ingresos ? 'checked' : ''}>
+          Genera ingresos
+        </label>
+      </div>
+    `;
+
+    App.showModal('Editar Fase: ' + (fase.nombre || ''), body,
+      `<button class="btn btn-secondary" onclick="App.closeModal()">Cancelar</button>
+       <button class="btn btn-primary" id="btn-save-edit-fase">Guardar</button>`);
+
+    document.getElementById('btn-save-edit-fase').addEventListener('click', async () => {
+      const nombre = document.getElementById('edit-fase-nombre').value.trim();
+      if (!nombre) { App.showToast('El nombre es obligatorio', 'warning'); return; }
+
+      await AgroDB.update('fases_fenologicas', faseId, {
+        nombre,
+        duracion_estimada_dias: parseInt(document.getElementById('edit-fase-duracion').value) || 0,
+        descripcion: document.getElementById('edit-fase-desc').value.trim(),
+        genera_ingresos: document.getElementById('edit-fase-ingresos').checked
+      });
+
+      App.closeModal();
+      App.showToast('Fase actualizada', 'success');
       App.refreshCurrentPage();
     });
   }

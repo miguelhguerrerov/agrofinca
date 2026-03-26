@@ -194,6 +194,9 @@ const InspeccionesModule = (() => {
         </div>
         <div class="form-group">
           <label>Etapa fenológica</label>
+          <select id="insp-fenologia-select" style="display:none;">
+            <option value="">-- Seleccionar fase --</option>
+          </select>
           <input type="text" id="insp-fenologia" value="${insp?.etapa_fenologica || ''}" placeholder="Ej: Floración, fructificación">
         </div>
       </div>
@@ -237,6 +240,56 @@ const InspeccionesModule = (() => {
       handlePhotos(e.target.files, newPhotos);
     });
 
+    // Fenología dropdown: populate from fases when ciclo selected
+    const fenologiaSelect = document.getElementById('insp-fenologia-select');
+    const fenologiaInput = document.getElementById('insp-fenologia');
+
+    async function updateFenologiaOptions() {
+      const cicloVal = document.getElementById('insp-ciclo').value;
+      if (!cicloVal) {
+        fenologiaSelect.style.display = 'none';
+        fenologiaInput.style.display = '';
+        return;
+      }
+      try {
+        const fases = await AgroDB.query('fases_fenologicas', r => r.ciclo_id === cicloVal);
+        const sorted = [...fases].sort((a, b) => (a.orden || 0) - (b.orden || 0));
+        if (sorted.length > 0) {
+          fenologiaSelect.innerHTML = '<option value="">-- Seleccionar fase --</option>' +
+            sorted.map(f => `<option value="${f.nombre}" ${insp?.etapa_fenologica === f.nombre ? 'selected' : ''}>${f.nombre}</option>`).join('') +
+            '<option value="__otra__">Otra...</option>';
+          fenologiaSelect.style.display = '';
+          fenologiaInput.style.display = 'none';
+          // If editing and value doesn't match any fase, show text input
+          if (insp?.etapa_fenologica && !sorted.find(f => f.nombre === insp.etapa_fenologica)) {
+            fenologiaSelect.value = '__otra__';
+            fenologiaInput.style.display = '';
+          }
+        } else {
+          fenologiaSelect.style.display = 'none';
+          fenologiaInput.style.display = '';
+        }
+      } catch {
+        fenologiaSelect.style.display = 'none';
+        fenologiaInput.style.display = '';
+      }
+    }
+
+    fenologiaSelect.addEventListener('change', () => {
+      if (fenologiaSelect.value === '__otra__') {
+        fenologiaInput.style.display = '';
+        fenologiaInput.value = '';
+        fenologiaInput.focus();
+      } else {
+        fenologiaInput.style.display = 'none';
+        fenologiaInput.value = fenologiaSelect.value;
+      }
+    });
+
+    document.getElementById('insp-ciclo').addEventListener('change', updateFenologiaOptions);
+    // Initialize on load if ciclo is pre-selected
+    updateFenologiaOptions();
+
     // Remove existing photos
     document.querySelectorAll('.photo-remove').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -266,7 +319,9 @@ const InspeccionesModule = (() => {
         plagas_detectadas: document.getElementById('insp-plagas').value.trim() || null,
         enfermedades_detectadas: document.getElementById('insp-enfermedades').value.trim() || null,
         estado_suelo: document.getElementById('insp-suelo').value || null,
-        etapa_fenologica: document.getElementById('insp-fenologia').value.trim() || null,
+        etapa_fenologica: (fenologiaSelect.style.display !== 'none' && fenologiaSelect.value && fenologiaSelect.value !== '__otra__')
+          ? fenologiaSelect.value
+          : (document.getElementById('insp-fenologia').value.trim() || null),
         observaciones: document.getElementById('insp-obs').value.trim() || null,
         fotos_count: (photos.length - document.querySelectorAll('.photo-preview-item').length) + newPhotos.length + document.querySelectorAll('.photo-preview-item').length,
         inspector: AuthModule.getUser()?.nombre || 'Usuario'

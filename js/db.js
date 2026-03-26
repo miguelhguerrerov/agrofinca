@@ -5,7 +5,7 @@
 
 const AgroDB = (() => {
   const DB_NAME = 'agrofinca_db';
-  const DB_VERSION = 6;
+  const DB_VERSION = 7;
   let db = null;
 
   // All object stores (tables)

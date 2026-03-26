@@ -270,9 +270,7 @@ const VentasModule = (() => {
           <input type="text" id="venta-comprador" value="${defBuyer}" placeholder="Nombre del comprador" list="compradores-list">
           <datalist id="compradores-list">${getUniqueBuyers(defaults).map(b => `<option value="${b}">`).join('')}</datalist>
         </div>
-        <div id="venta-nuevo-cliente-group" style="display:none;margin-top:6px;">
-          <input type="text" id="venta-nuevo-cliente-nombre" placeholder="Nombre del nuevo cliente">
-        </div>
+        <!-- New client is created via nested modal triggered by __nuevo__ selection -->
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -369,16 +367,26 @@ const VentasModule = (() => {
     // Cliente select logic
     const clienteSelect = document.getElementById('venta-cliente');
     const compradorManualGroup = document.getElementById('venta-comprador-manual-group');
-    const nuevoClienteGroup = document.getElementById('venta-nuevo-cliente-group');
 
     clienteSelect.addEventListener('change', async () => {
       const val = clienteSelect.value;
       if (val === '__nuevo__') {
-        compradorManualGroup.style.display = 'none';
-        nuevoClienteGroup.style.display = 'block';
+        // Open nested client form modal
+        showNestedClienteForm(fincaId, (nuevoCliente) => {
+          // Add new option to select and auto-select it
+          const newOpt = document.createElement('option');
+          newOpt.value = nuevoCliente.id;
+          newOpt.textContent = nuevoCliente.nombre;
+          // Insert before the "__nuevo__" option
+          const nuevoOption = clienteSelect.querySelector('option[value="__nuevo__"]');
+          clienteSelect.insertBefore(newOpt, nuevoOption);
+          clienteSelect.value = nuevoCliente.id;
+          compradorManualGroup.style.display = 'none';
+        });
+        // Reset select to empty while modal is open (in case user cancels)
+        clienteSelect.value = '';
       } else if (val) {
         compradorManualGroup.style.display = 'none';
-        nuevoClienteGroup.style.display = 'none';
         // Auto-fill last price for this client + selected product
         const cultivoId = document.getElementById('venta-cultivo').value;
         if (cultivoId && cultivoId !== 'otro') {
@@ -390,7 +398,6 @@ const VentasModule = (() => {
         }
       } else {
         compradorManualGroup.style.display = 'block';
-        nuevoClienteGroup.style.display = 'none';
       }
     });
 
@@ -416,7 +423,7 @@ const VentasModule = (() => {
       cicloSelect.innerHTML = '<option value="">-- Sin ciclo --</option>';
       if (!cultivoId || cultivoId === 'otro') return;
       try {
-        const ciclos = await AgroDB.query('ciclos', r => r.finca_id === fincaId && r.cultivo_id === cultivoId && r.estado === 'activo');
+        const ciclos = await AgroDB.query('ciclos_productivos', r => r.finca_id === fincaId && r.cultivo_id === cultivoId && r.estado === 'activo');
         ciclos.forEach(c => {
           const opt = document.createElement('option');
           opt.value = c.id;
@@ -507,7 +514,7 @@ const VentasModule = (() => {
       const cicloId = e.target.value;
       if (cicloId) {
         try {
-          const ciclo = await AgroDB.getById('ciclos', cicloId);
+          const ciclo = await AgroDB.getById('ciclos_productivos', cicloId);
           if (ciclo?.area_id) {
             await populateAreas(ciclo.area_id);
           }
@@ -551,20 +558,7 @@ const VentasModule = (() => {
       let cliente_id = null;
       let comprador = '';
 
-      if (clienteVal === '__nuevo__') {
-        // Create new client inline
-        const nuevoNombre = document.getElementById('venta-nuevo-cliente-nombre').value.trim();
-        if (nuevoNombre) {
-          const nuevoCliente = await AgroDB.add('clientes', {
-            finca_id: fincaId,
-            nombre: nuevoNombre,
-            tipo: 'General',
-            activo: true
-          });
-          cliente_id = nuevoCliente.id || nuevoCliente;
-          comprador = nuevoNombre;
-        }
-      } else if (clienteVal) {
+      if (clienteVal && clienteVal !== '__nuevo__') {
         cliente_id = clienteVal;
         const clienteOpt = document.getElementById('venta-cliente').selectedOptions[0];
         comprador = clienteOpt?.textContent || '';
@@ -604,6 +598,112 @@ const VentasModule = (() => {
       App.closeModal();
       App.showToast('Venta guardada', 'success');
       App.refreshCurrentPage();
+    });
+  }
+
+  // ============================================
+  // Nested Client Form (overlay on top of sale modal)
+  // ============================================
+
+  function showNestedClienteForm(fincaId, callback) {
+    const tiposCliente = ['mayorista', 'minorista', 'intermediario', 'consumidor_final', 'otro'];
+
+    const overlay = document.createElement('div');
+    overlay.id = 'nested-cliente-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10001;display:flex;align-items:center;justify-content:center;padding:1rem;';
+
+    overlay.innerHTML = `
+      <div style="background:var(--white,#fff);border-radius:12px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+        <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--gray-200,#e5e7eb);display:flex;justify-content:space-between;align-items:center;">
+          <h3 style="margin:0;font-size:1.1rem;">Nuevo Cliente</h3>
+          <button id="nested-cliente-close" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--gray-500,#6b7280);padding:0;line-height:1;">&times;</button>
+        </div>
+        <div style="padding:1.25rem;">
+          <div class="form-group">
+            <label>Nombre *</label>
+            <input type="text" id="nc-nombre" placeholder="Nombre del cliente">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Teléfono</label>
+              <input type="tel" id="nc-telefono" placeholder="Teléfono">
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="nc-email" placeholder="Email">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Ubicación</label>
+              <input type="text" id="nc-ubicacion" placeholder="Ciudad, zona...">
+            </div>
+            <div class="form-group">
+              <label>Tipo</label>
+              <select id="nc-tipo">
+                ${tiposCliente.map(t => `<option value="${t}">${t.replace('_', ' ')}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Notas</label>
+            <textarea id="nc-notas" placeholder="Observaciones"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem;">
+            <button class="btn btn-secondary" id="nested-cliente-cancel">Cancelar</button>
+            <button class="btn btn-primary" id="nested-cliente-save">Guardar Cliente</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Focus nombre field
+    setTimeout(() => document.getElementById('nc-nombre')?.focus(), 100);
+
+    // Close / Cancel handlers
+    const closeOverlay = () => {
+      overlay.remove();
+    };
+
+    overlay.querySelector('#nested-cliente-close').addEventListener('click', closeOverlay);
+    overlay.querySelector('#nested-cliente-cancel').addEventListener('click', closeOverlay);
+
+    // Close on backdrop click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeOverlay();
+    });
+
+    // Save handler
+    overlay.querySelector('#nested-cliente-save').addEventListener('click', async () => {
+      const nombre = document.getElementById('nc-nombre').value.trim();
+      if (!nombre) {
+        App.showToast('El nombre es obligatorio', 'warning');
+        return;
+      }
+
+      const data = {
+        finca_id: fincaId,
+        nombre,
+        telefono: document.getElementById('nc-telefono').value.trim(),
+        email: document.getElementById('nc-email').value.trim(),
+        ubicacion: document.getElementById('nc-ubicacion').value.trim(),
+        tipo: document.getElementById('nc-tipo').value,
+        notas: document.getElementById('nc-notas').value.trim(),
+        activo: true
+      };
+
+      try {
+        const result = await AgroDB.add('clientes', data);
+        const nuevoCliente = { ...data, id: result.id || result };
+        closeOverlay();
+        App.showToast('Cliente creado', 'success');
+        if (callback) callback(nuevoCliente);
+      } catch (err) {
+        App.showToast('Error al crear cliente', 'error');
+        console.error('Error creating client:', err);
+      }
     });
   }
 

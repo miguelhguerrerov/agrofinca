@@ -190,7 +190,36 @@ const ActivosModule = (() => {
         await AgroDB.update('activos_finca', activo.id, data);
         App.showToast('Activo actualizado', 'success');
       } else {
-        await AgroDB.add('activos_finca', data);
+        const nuevoActivo = await AgroDB.add('activos_finca', data);
+        // Auto-create corresponding cost record for the acquisition
+        const activoId = nuevoActivo?.id || data.id;
+        try {
+          const userId = SupabaseClient?.user?.id || '';
+          await AgroDB.add('costos', {
+            id: crypto.randomUUID(),
+            finca_id: fincaId,
+            categoria: 'activo',
+            subcategoria: data.categoria,
+            tipo_costo: 'fijo',
+            fecha: data.fecha_adquisicion || new Date().toISOString().slice(0, 10),
+            total: data.costo_adquisicion || 0,
+            cantidad: 1,
+            unidad: 'unidad',
+            costo_unitario: data.costo_adquisicion || 0,
+            descripcion: `Adquisición: ${data.nombre}`,
+            area_id: data.area_id || null,
+            cultivo_id: data.cultivo_id || null,
+            activo_id: activoId,
+            es_mano_obra_familiar: false,
+            notas: `Costo de adquisición del activo "${data.nombre}"`,
+            registrado_por: SupabaseClient?.user?.email || '',
+            synced: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        } catch (e) {
+          console.warn('[Activos] No se pudo crear costo de adquisición:', e);
+        }
         App.showToast('Activo registrado', 'success');
       }
 

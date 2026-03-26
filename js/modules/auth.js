@@ -41,6 +41,11 @@ const AuthModule = (() => {
         if (e.key === 'Enter') handleRegister();
       });
     });
+
+    // Role selector toggle for ingeniero fields
+    document.getElementById('reg-rol')?.addEventListener('change', (e) => {
+      document.getElementById('reg-ingeniero-fields').style.display = e.target.value === 'ingeniero' ? '' : 'none';
+    });
   }
 
   // ---- Input Validation ----
@@ -109,10 +114,12 @@ const AuthModule = (() => {
           localUser = await AgroDB.update('usuarios', localUser.id, {
             plan: profile?.plan || AppConfig.PLAN_FREE,
             is_admin: profile?.is_admin || false,
-            password_hash: simpleHash(password)
+            password_hash: simpleHash(password),
+            rol: profile?.rol || 'agricultor'
           });
         }
         currentUser = localUser;
+        currentUser.rol = profile?.rol || 'agricultor';
 
         // Mark online authentication timestamp
         markOnlineAuth();
@@ -203,17 +210,26 @@ const AuthModule = (() => {
         throw new Error('No se pudo verificar la cuenta. Intenta iniciar sesión.');
       }
 
-      // Create user profile in Supabase
-      await SupabaseClient.upsertUserProfile({
+      // Determine account role
+      const rol = document.getElementById('reg-rol')?.value || 'agricultor';
+      const profileData = {
         id: userId,
         email: email,
         nombre: name,
         plan: AppConfig.PLAN_FREE,
         is_admin: false,
         farm_count: 0,
+        rol: rol,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-      });
+      };
+      if (rol === 'ingeniero') {
+        profileData.especialidad = document.getElementById('reg-especialidad')?.value || '';
+        profileData.registro_profesional = document.getElementById('reg-registro')?.value || '';
+      }
+
+      // Create user profile in Supabase
+      await SupabaseClient.upsertUserProfile(profileData);
 
       // Save locally (update if exists, add if new)
       let localUser = await findLocalUserByEmail(email);
@@ -222,14 +238,15 @@ const AuthModule = (() => {
           nombre: name,
           password_hash: simpleHash(password),
           plan: AppConfig.PLAN_FREE,
-          is_admin: false
+          is_admin: false,
+          rol: rol
         });
       } else {
         localUser = await AgroDB.add('usuarios', {
           id: userId,
           email: email,
           nombre: name,
-          rol: 'propietario',
+          rol: rol,
           avatar_iniciales: Format.initials(name),
           password_hash: simpleHash(password),
           plan: AppConfig.PLAN_FREE,
@@ -317,7 +334,8 @@ const AuthModule = (() => {
       nombre: user.nombre,
       // plan and is_admin are saved but will be re-validated from server on restore
       plan: user.plan || AppConfig.PLAN_FREE,
-      is_admin: user.is_admin || false
+      is_admin: user.is_admin || false,
+      rol: user.rol || 'agricultor'
     }));
   }
 
@@ -350,10 +368,12 @@ const AuthModule = (() => {
             // Server is source of truth for plan and admin status
             currentUser.plan = profile.plan || AppConfig.PLAN_FREE;
             currentUser.is_admin = profile.is_admin === true;
+            currentUser.rol = profile.rol || 'agricultor';
             // Update local DB
             await AgroDB.update('usuarios', currentUser.id, {
               plan: currentUser.plan,
-              is_admin: currentUser.is_admin
+              is_admin: currentUser.is_admin,
+              rol: currentUser.rol
             });
             saveSession(currentUser);
           }
@@ -374,6 +394,7 @@ const AuthModule = (() => {
         // but never trust localStorage directly - use IndexedDB value
         currentUser.plan = localUser.plan || AppConfig.PLAN_FREE;
         currentUser.is_admin = localUser.is_admin === true;
+        currentUser.rol = localUser.rol || 'agricultor';
       }
 
       return currentUser;
@@ -407,6 +428,9 @@ const AuthModule = (() => {
     return currentUser?.is_admin === true;
   }
 
+  function getUserRol() { return currentUser?.rol || 'agricultor'; }
+  function isIngeniero() { return getUserRol() === 'ingeniero'; }
+
   // Get user role in a specific finca
   async function getUserRoleInFinca(fincaId) {
     if (!currentUser) return null;
@@ -435,7 +459,7 @@ const AuthModule = (() => {
 
   return {
     init, getUser, getUserId, logout, restoreSession, handleOfflineMode,
-    isPaid, isAdmin, getUserRoleInFinca, canAccessFinances, canManageMembers,
+    isPaid, isAdmin, getUserRol, isIngeniero, getUserRoleInFinca, canAccessFinances, canManageMembers,
     sanitizeText
   };
 })();

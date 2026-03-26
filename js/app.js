@@ -24,7 +24,16 @@ const App = (() => {
     animales: () => AnimalesModule,
     configuracion: () => ConfiguracionModule,
     'asistente-ia': () => AsistenteIAModule,
-    admin: () => AdminModule
+    admin: () => AdminModule,
+    'ing-dashboard': () => IngDashboardModule,
+    'ing-agricultores': () => IngAgricultoresModule,
+    'ing-inspecciones': () => IngInspeccionesModule,
+    'ing-prescripciones': () => IngPrescripcionesModule,
+    'ing-productos': () => IngProductosModule,
+    'ing-ventas': () => IngVentasModule,
+    'ing-chat': () => IngChatModule,
+    'ing-calendario': () => IngCalendarioModule,
+    'ing-reportes': () => IngReportesModule
   };
 
   const pageNames = {
@@ -42,7 +51,16 @@ const App = (() => {
     animales: 'Animales',
     configuracion: 'Configuración',
     'asistente-ia': 'Asistente IA',
-    admin: 'Panel de Administración'
+    admin: 'Panel de Administración',
+    'ing-dashboard': 'Dashboard',
+    'ing-agricultores': 'Agricultores',
+    'ing-inspecciones': 'Inspecciones',
+    'ing-prescripciones': 'Prescripciones',
+    'ing-productos': 'Productos',
+    'ing-ventas': 'Ventas Insumos',
+    'ing-chat': 'Chat',
+    'ing-calendario': 'Calendario',
+    'ing-reportes': 'Reportes'
   };
 
   // Initialize the app
@@ -120,12 +138,33 @@ const App = (() => {
       badgeIA.style.display = AuthModule.isPaid() ? 'none' : '';
     }
 
+    // Update navigation based on user role
+    updateNavigationForRole();
+
     // Start sync
     SyncEngine.setStatusCallback(updateSyncUI);
     SyncEngine.startAutoSync();
 
-    // Navigate to dashboard
-    navigateTo('dashboard');
+    // Navigate to default page based on role
+    const defaultPage = AuthModule.isIngeniero() ? 'ing-dashboard' : 'dashboard';
+    navigateTo(defaultPage);
+  }
+
+  function updateNavigationForRole() {
+    const isIng = AuthModule.isIngeniero();
+
+    // Hide agricultor-only nav items when ingeniero
+    const agriNav = ['dashboard', 'produccion', 'ventas', 'costos', 'finanzas', 'tareas', 'inspecciones', 'fitosanitario'];
+    const ingNav = ['ing-dashboard', 'ing-agricultores', 'ing-inspecciones', 'ing-prescripciones', 'ing-productos', 'ing-ventas', 'ing-chat', 'ing-calendario', 'ing-reportes'];
+
+    for (const id of agriNav) {
+      const el = document.querySelector(`[data-page="${id}"]`);
+      if (el) el.closest('li, .nav-item')?.style.setProperty('display', isIng ? 'none' : '');
+    }
+    for (const id of ingNav) {
+      const el = document.querySelector(`[data-page="${id}"]`);
+      if (el) el.closest('li, .nav-item')?.style.setProperty('display', isIng ? '' : 'none');
+    }
   }
 
   function updateUserUI(user) {

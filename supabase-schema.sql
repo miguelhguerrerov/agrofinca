@@ -70,13 +70,16 @@ DROP POLICY IF EXISTS "Users update own profile" ON user_profiles;
 DROP POLICY IF EXISTS "Admins update all profiles" ON user_profiles;
 DROP POLICY IF EXISTS "Insert own profile" ON user_profiles;
 DROP POLICY IF EXISTS "Users can view own profile" ON user_profiles;
+DROP POLICY IF EXISTS "Users can view own profile" ON user_profiles;
 CREATE POLICY "Users can view own profile" ON user_profiles
   FOR SELECT USING (id = auth.uid());
 
 DROP POLICY IF EXISTS "Users can update own profile" ON user_profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON user_profiles;
 CREATE POLICY "Users can update own profile" ON user_profiles
   FOR UPDATE USING (id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can insert own profile" ON user_profiles;
 DROP POLICY IF EXISTS "Users can insert own profile" ON user_profiles;
 CREATE POLICY "Users can insert own profile" ON user_profiles
   FOR INSERT WITH CHECK (id = auth.uid());
@@ -535,16 +538,20 @@ DO $$ BEGIN
 END $$;
 
 -- ---- fincas (special: owner + members) ----
+DROP POLICY IF EXISTS "fincas_select" ON fincas;
 CREATE POLICY "fincas_select" ON fincas FOR SELECT USING (
   propietario_id = auth.uid()
   OR id IN (SELECT finca_id FROM finca_miembros WHERE usuario_id = auth.uid())
 );
+DROP POLICY IF EXISTS "fincas_insert" ON fincas;
 CREATE POLICY "fincas_insert" ON fincas FOR INSERT WITH CHECK (
   propietario_id = auth.uid()
 );
+DROP POLICY IF EXISTS "fincas_update" ON fincas;
 CREATE POLICY "fincas_update" ON fincas FOR UPDATE USING (
   propietario_id = auth.uid()
 );
+DROP POLICY IF EXISTS "fincas_delete" ON fincas;
 CREATE POLICY "fincas_delete" ON fincas FOR DELETE USING (
   propietario_id = auth.uid()
 );
@@ -554,21 +561,33 @@ DO $$ BEGIN
 END $$;
 
 -- ---- finca_miembros ----
+DROP POLICY IF EXISTS "finca_miembros_select" ON finca_miembros;
 CREATE POLICY "finca_miembros_select" ON finca_miembros FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "finca_miembros_insert" ON finca_miembros;
 CREATE POLICY "finca_miembros_insert" ON finca_miembros FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "finca_miembros_update" ON finca_miembros;
 CREATE POLICY "finca_miembros_update" ON finca_miembros FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "finca_miembros_delete" ON finca_miembros;
 CREATE POLICY "finca_miembros_delete" ON finca_miembros FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- areas ----
+DROP POLICY IF EXISTS "areas_select" ON areas;
 CREATE POLICY "areas_select" ON areas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "areas_insert" ON areas;
 CREATE POLICY "areas_insert" ON areas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "areas_update" ON areas;
 CREATE POLICY "areas_update" ON areas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "areas_delete" ON areas;
 CREATE POLICY "areas_delete" ON areas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- cultivos_catalogo ----
+DROP POLICY IF EXISTS "cultivos_catalogo_select" ON cultivos_catalogo;
 CREATE POLICY "cultivos_catalogo_select" ON cultivos_catalogo FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "cultivos_catalogo_insert" ON cultivos_catalogo;
 CREATE POLICY "cultivos_catalogo_insert" ON cultivos_catalogo FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "cultivos_catalogo_update" ON cultivos_catalogo;
 CREATE POLICY "cultivos_catalogo_update" ON cultivos_catalogo FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "cultivos_catalogo_delete" ON cultivos_catalogo;
 CREATE POLICY "cultivos_catalogo_delete" ON cultivos_catalogo FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 DO $$ BEGIN
@@ -576,27 +595,43 @@ DO $$ BEGIN
 END $$;
 
 -- ---- ciclos_productivos ----
+DROP POLICY IF EXISTS "ciclos_productivos_select" ON ciclos_productivos;
 CREATE POLICY "ciclos_productivos_select" ON ciclos_productivos FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "ciclos_productivos_insert" ON ciclos_productivos;
 CREATE POLICY "ciclos_productivos_insert" ON ciclos_productivos FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "ciclos_productivos_update" ON ciclos_productivos;
 CREATE POLICY "ciclos_productivos_update" ON ciclos_productivos FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "ciclos_productivos_delete" ON ciclos_productivos;
 CREATE POLICY "ciclos_productivos_delete" ON ciclos_productivos FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- cosechas ----
+DROP POLICY IF EXISTS "cosechas_select" ON cosechas;
 CREATE POLICY "cosechas_select" ON cosechas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "cosechas_insert" ON cosechas;
 CREATE POLICY "cosechas_insert" ON cosechas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "cosechas_update" ON cosechas;
 CREATE POLICY "cosechas_update" ON cosechas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "cosechas_delete" ON cosechas;
 CREATE POLICY "cosechas_delete" ON cosechas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- ventas ----
+DROP POLICY IF EXISTS "ventas_select" ON ventas;
 CREATE POLICY "ventas_select" ON ventas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "ventas_insert" ON ventas;
 CREATE POLICY "ventas_insert" ON ventas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "ventas_update" ON ventas;
 CREATE POLICY "ventas_update" ON ventas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "ventas_delete" ON ventas;
 CREATE POLICY "ventas_delete" ON ventas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- costos ----
+DROP POLICY IF EXISTS "costos_select" ON costos;
 CREATE POLICY "costos_select" ON costos FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "costos_insert" ON costos;
 CREATE POLICY "costos_insert" ON costos FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "costos_update" ON costos;
 CREATE POLICY "costos_update" ON costos FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "costos_delete" ON costos;
 CREATE POLICY "costos_delete" ON costos FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 DO $$ BEGIN
@@ -604,27 +639,43 @@ DO $$ BEGIN
 END $$;
 
 -- ---- colmenas ----
+DROP POLICY IF EXISTS "colmenas_select" ON colmenas;
 CREATE POLICY "colmenas_select" ON colmenas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "colmenas_insert" ON colmenas;
 CREATE POLICY "colmenas_insert" ON colmenas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "colmenas_update" ON colmenas;
 CREATE POLICY "colmenas_update" ON colmenas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "colmenas_delete" ON colmenas;
 CREATE POLICY "colmenas_delete" ON colmenas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- inspecciones_colmena ----
+DROP POLICY IF EXISTS "inspecciones_colmena_select" ON inspecciones_colmena;
 CREATE POLICY "inspecciones_colmena_select" ON inspecciones_colmena FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "inspecciones_colmena_insert" ON inspecciones_colmena;
 CREATE POLICY "inspecciones_colmena_insert" ON inspecciones_colmena FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "inspecciones_colmena_update" ON inspecciones_colmena;
 CREATE POLICY "inspecciones_colmena_update" ON inspecciones_colmena FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "inspecciones_colmena_delete" ON inspecciones_colmena;
 CREATE POLICY "inspecciones_colmena_delete" ON inspecciones_colmena FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- camas_lombricompost ----
+DROP POLICY IF EXISTS "camas_lombricompost_select" ON camas_lombricompost;
 CREATE POLICY "camas_lombricompost_select" ON camas_lombricompost FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "camas_lombricompost_insert" ON camas_lombricompost;
 CREATE POLICY "camas_lombricompost_insert" ON camas_lombricompost FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "camas_lombricompost_update" ON camas_lombricompost;
 CREATE POLICY "camas_lombricompost_update" ON camas_lombricompost FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "camas_lombricompost_delete" ON camas_lombricompost;
 CREATE POLICY "camas_lombricompost_delete" ON camas_lombricompost FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- registros_lombricompost ----
+DROP POLICY IF EXISTS "registros_lombricompost_select" ON registros_lombricompost;
 CREATE POLICY "registros_lombricompost_select" ON registros_lombricompost FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "registros_lombricompost_insert" ON registros_lombricompost;
 CREATE POLICY "registros_lombricompost_insert" ON registros_lombricompost FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "registros_lombricompost_update" ON registros_lombricompost;
 CREATE POLICY "registros_lombricompost_update" ON registros_lombricompost FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "registros_lombricompost_delete" ON registros_lombricompost;
 CREATE POLICY "registros_lombricompost_delete" ON registros_lombricompost FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 DO $$ BEGIN
@@ -632,21 +683,33 @@ DO $$ BEGIN
 END $$;
 
 -- ---- tareas ----
+DROP POLICY IF EXISTS "tareas_select" ON tareas;
 CREATE POLICY "tareas_select" ON tareas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "tareas_insert" ON tareas;
 CREATE POLICY "tareas_insert" ON tareas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "tareas_update" ON tareas;
 CREATE POLICY "tareas_update" ON tareas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "tareas_delete" ON tareas;
 CREATE POLICY "tareas_delete" ON tareas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- inspecciones ----
+DROP POLICY IF EXISTS "inspecciones_select" ON inspecciones;
 CREATE POLICY "inspecciones_select" ON inspecciones FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "inspecciones_insert" ON inspecciones;
 CREATE POLICY "inspecciones_insert" ON inspecciones FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "inspecciones_update" ON inspecciones;
 CREATE POLICY "inspecciones_update" ON inspecciones FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "inspecciones_delete" ON inspecciones;
 CREATE POLICY "inspecciones_delete" ON inspecciones FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- fotos_inspeccion ----
+DROP POLICY IF EXISTS "fotos_inspeccion_select" ON fotos_inspeccion;
 CREATE POLICY "fotos_inspeccion_select" ON fotos_inspeccion FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "fotos_inspeccion_insert" ON fotos_inspeccion;
 CREATE POLICY "fotos_inspeccion_insert" ON fotos_inspeccion FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "fotos_inspeccion_update" ON fotos_inspeccion;
 CREATE POLICY "fotos_inspeccion_update" ON fotos_inspeccion FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "fotos_inspeccion_delete" ON fotos_inspeccion;
 CREATE POLICY "fotos_inspeccion_delete" ON fotos_inspeccion FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 DO $$ BEGIN
@@ -654,21 +717,33 @@ DO $$ BEGIN
 END $$;
 
 -- ---- aplicaciones_fitosanitarias ----
+DROP POLICY IF EXISTS "aplicaciones_fitosanitarias_select" ON aplicaciones_fitosanitarias;
 CREATE POLICY "aplicaciones_fitosanitarias_select" ON aplicaciones_fitosanitarias FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "aplicaciones_fitosanitarias_insert" ON aplicaciones_fitosanitarias;
 CREATE POLICY "aplicaciones_fitosanitarias_insert" ON aplicaciones_fitosanitarias FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "aplicaciones_fitosanitarias_update" ON aplicaciones_fitosanitarias;
 CREATE POLICY "aplicaciones_fitosanitarias_update" ON aplicaciones_fitosanitarias FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "aplicaciones_fitosanitarias_delete" ON aplicaciones_fitosanitarias;
 CREATE POLICY "aplicaciones_fitosanitarias_delete" ON aplicaciones_fitosanitarias FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- lotes_animales ----
+DROP POLICY IF EXISTS "lotes_animales_select" ON lotes_animales;
 CREATE POLICY "lotes_animales_select" ON lotes_animales FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "lotes_animales_insert" ON lotes_animales;
 CREATE POLICY "lotes_animales_insert" ON lotes_animales FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "lotes_animales_update" ON lotes_animales;
 CREATE POLICY "lotes_animales_update" ON lotes_animales FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "lotes_animales_delete" ON lotes_animales;
 CREATE POLICY "lotes_animales_delete" ON lotes_animales FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ---- registros_animales ----
+DROP POLICY IF EXISTS "registros_animales_select" ON registros_animales;
 CREATE POLICY "registros_animales_select" ON registros_animales FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "registros_animales_insert" ON registros_animales;
 CREATE POLICY "registros_animales_insert" ON registros_animales FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "registros_animales_update" ON registros_animales;
 CREATE POLICY "registros_animales_update" ON registros_animales FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "registros_animales_delete" ON registros_animales;
 CREATE POLICY "registros_animales_delete" ON registros_animales FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 DO $$ BEGIN
@@ -676,15 +751,23 @@ DO $$ BEGIN
 END $$;
 
 -- ---- ai_conversations (user owns their conversations) ----
+DROP POLICY IF EXISTS "ai_conv_select" ON ai_conversations;
 CREATE POLICY "ai_conv_select" ON ai_conversations FOR SELECT USING (usuario_id = auth.uid());
+DROP POLICY IF EXISTS "ai_conv_insert" ON ai_conversations;
 CREATE POLICY "ai_conv_insert" ON ai_conversations FOR INSERT WITH CHECK (usuario_id = auth.uid());
+DROP POLICY IF EXISTS "ai_conv_update" ON ai_conversations;
 CREATE POLICY "ai_conv_update" ON ai_conversations FOR UPDATE USING (usuario_id = auth.uid());
+DROP POLICY IF EXISTS "ai_conv_delete" ON ai_conversations;
 CREATE POLICY "ai_conv_delete" ON ai_conversations FOR DELETE USING (usuario_id = auth.uid());
 
 -- ---- ai_chat_history (user owns their messages) ----
+DROP POLICY IF EXISTS "ai_chat_select" ON ai_chat_history;
 CREATE POLICY "ai_chat_select" ON ai_chat_history FOR SELECT USING (usuario_id = auth.uid());
+DROP POLICY IF EXISTS "ai_chat_insert" ON ai_chat_history;
 CREATE POLICY "ai_chat_insert" ON ai_chat_history FOR INSERT WITH CHECK (usuario_id = auth.uid());
+DROP POLICY IF EXISTS "ai_chat_update" ON ai_chat_history;
 CREATE POLICY "ai_chat_update" ON ai_chat_history FOR UPDATE USING (usuario_id = auth.uid());
+DROP POLICY IF EXISTS "ai_chat_delete" ON ai_chat_history;
 CREATE POLICY "ai_chat_delete" ON ai_chat_history FOR DELETE USING (usuario_id = auth.uid());
 
 DO $$ BEGIN
@@ -811,9 +894,13 @@ CREATE TABLE IF NOT EXISTS clientes (
 );
 
 ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "clientes_select" ON clientes;
 CREATE POLICY "clientes_select" ON clientes FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "clientes_insert" ON clientes;
 CREATE POLICY "clientes_insert" ON clientes FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "clientes_update" ON clientes;
 CREATE POLICY "clientes_update" ON clientes FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "clientes_delete" ON clientes;
 CREATE POLICY "clientes_delete" ON clientes FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- --- proveedores (directorio de proveedores) ---
@@ -833,9 +920,13 @@ CREATE TABLE IF NOT EXISTS proveedores (
 );
 
 ALTER TABLE proveedores ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "proveedores_select" ON proveedores;
 CREATE POLICY "proveedores_select" ON proveedores FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "proveedores_insert" ON proveedores;
 CREATE POLICY "proveedores_insert" ON proveedores FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "proveedores_update" ON proveedores;
 CREATE POLICY "proveedores_update" ON proveedores FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "proveedores_delete" ON proveedores;
 CREATE POLICY "proveedores_delete" ON proveedores FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- --- activos_finca (activos depreciables) ---
@@ -857,9 +948,13 @@ CREATE TABLE IF NOT EXISTS activos_finca (
 );
 
 ALTER TABLE activos_finca ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "activos_finca_select" ON activos_finca;
 CREATE POLICY "activos_finca_select" ON activos_finca FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "activos_finca_insert" ON activos_finca;
 CREATE POLICY "activos_finca_insert" ON activos_finca FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "activos_finca_update" ON activos_finca;
 CREATE POLICY "activos_finca_update" ON activos_finca FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "activos_finca_delete" ON activos_finca;
 CREATE POLICY "activos_finca_delete" ON activos_finca FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- --- area_cultivos (policultivo: proporción por área) ---
@@ -879,9 +974,13 @@ CREATE TABLE IF NOT EXISTS area_cultivos (
 );
 
 ALTER TABLE area_cultivos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "area_cultivos_select" ON area_cultivos;
 CREATE POLICY "area_cultivos_select" ON area_cultivos FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "area_cultivos_insert" ON area_cultivos;
 CREATE POLICY "area_cultivos_insert" ON area_cultivos FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "area_cultivos_update" ON area_cultivos;
 CREATE POLICY "area_cultivos_update" ON area_cultivos FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "area_cultivos_delete" ON area_cultivos;
 CREATE POLICY "area_cultivos_delete" ON area_cultivos FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- --- depreciacion_mensual (registros mensuales auto-generados) ---
@@ -898,9 +997,13 @@ CREATE TABLE IF NOT EXISTS depreciacion_mensual (
 );
 
 ALTER TABLE depreciacion_mensual ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "depreciacion_mensual_select" ON depreciacion_mensual;
 CREATE POLICY "depreciacion_mensual_select" ON depreciacion_mensual FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "depreciacion_mensual_insert" ON depreciacion_mensual;
 CREATE POLICY "depreciacion_mensual_insert" ON depreciacion_mensual FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "depreciacion_mensual_update" ON depreciacion_mensual;
 CREATE POLICY "depreciacion_mensual_update" ON depreciacion_mensual FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "depreciacion_mensual_delete" ON depreciacion_mensual;
 CREATE POLICY "depreciacion_mensual_delete" ON depreciacion_mensual FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- --- fases_fenologicas (fases de cultivos perennes) ---
@@ -921,9 +1024,13 @@ CREATE TABLE IF NOT EXISTS fases_fenologicas (
 );
 
 ALTER TABLE fases_fenologicas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "fases_fenologicas_select" ON fases_fenologicas;
 CREATE POLICY "fases_fenologicas_select" ON fases_fenologicas FOR SELECT USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "fases_fenologicas_insert" ON fases_fenologicas;
 CREATE POLICY "fases_fenologicas_insert" ON fases_fenologicas FOR INSERT WITH CHECK (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "fases_fenologicas_update" ON fases_fenologicas;
 CREATE POLICY "fases_fenologicas_update" ON fases_fenologicas FOR UPDATE USING (finca_id IN (SELECT user_finca_ids()));
+DROP POLICY IF EXISTS "fases_fenologicas_delete" ON fases_fenologicas;
 CREATE POLICY "fases_fenologicas_delete" ON fases_fenologicas FOR DELETE USING (finca_id IN (SELECT user_finca_ids()));
 
 -- ============================================================================
@@ -959,3 +1066,387 @@ ALTER TABLE cosechas ADD COLUMN IF NOT EXISTS registrado_por TEXT;
 ALTER TABLE fases_fenologicas ADD COLUMN IF NOT EXISTS duracion_estimada_dias INTEGER;
 ALTER TABLE cultivos_catalogo ADD COLUMN IF NOT EXISTS fases_template JSONB;
 ALTER TABLE costos ADD COLUMN IF NOT EXISTS activo_id UUID;
+
+-- ═══════════════════════════════════════════════════════════════
+-- v4.0: ROL INGENIERO AGRÓNOMO
+-- ═══════════════════════════════════════════════════════════════
+
+-- user_profiles: add role fields
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS rol TEXT DEFAULT 'agricultor';
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS especialidad TEXT;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS registro_profesional TEXT;
+
+-- inspecciones: add engineer fields
+ALTER TABLE inspecciones ADD COLUMN IF NOT EXISTS ingeniero_id UUID;
+ALTER TABLE inspecciones ADD COLUMN IF NOT EXISTS protocolo_id UUID;
+ALTER TABLE inspecciones ADD COLUMN IF NOT EXISTS datos_evaluacion JSONB;
+ALTER TABLE inspecciones ADD COLUMN IF NOT EXISTS condiciones_ambientales JSONB;
+
+-- aplicaciones_fitosanitarias: link to prescription
+ALTER TABLE aplicaciones_fitosanitarias ADD COLUMN IF NOT EXISTS prescripcion_id UUID;
+
+-- tareas: engineer assignment
+ALTER TABLE tareas ADD COLUMN IF NOT EXISTS asignado_por_ingeniero UUID;
+
+-- ───────────────────────────────────────────────────────────────
+-- Ingeniero ↔ Agricultor relationship
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ingeniero_agricultores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ingeniero_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  agricultor_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  estado TEXT DEFAULT 'pendiente',
+  fecha_afiliacion TIMESTAMPTZ,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE ingeniero_agricultores ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "ia_select" ON ingeniero_agricultores;
+CREATE POLICY "ia_select" ON ingeniero_agricultores FOR SELECT USING (
+  ingeniero_id = auth.uid() OR agricultor_id = auth.uid()
+);
+DROP POLICY IF EXISTS "ia_insert" ON ingeniero_agricultores;
+CREATE POLICY "ia_insert" ON ingeniero_agricultores FOR INSERT WITH CHECK (
+  ingeniero_id = auth.uid()
+);
+DROP POLICY IF EXISTS "ia_update" ON ingeniero_agricultores;
+CREATE POLICY "ia_update" ON ingeniero_agricultores FOR UPDATE USING (
+  ingeniero_id = auth.uid() OR agricultor_id = auth.uid()
+);
+DROP POLICY IF EXISTS "ia_delete" ON ingeniero_agricultores;
+CREATE POLICY "ia_delete" ON ingeniero_agricultores FOR DELETE USING (
+  ingeniero_id = auth.uid() OR agricultor_id = auth.uid()
+);
+
+-- ───────────────────────────────────────────────────────────────
+-- Protocolos de evaluación
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS protocolos_evaluacion (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ingeniero_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  cultivo_id UUID,
+  plaga_objetivo TEXT,
+  variables JSONB DEFAULT '[]',
+  repeticiones INTEGER DEFAULT 5,
+  escala TEXT DEFAULT 'porcentaje',
+  formulas JSONB DEFAULT '[]',
+  descripcion TEXT,
+  activo BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE protocolos_evaluacion ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "pe_all" ON protocolos_evaluacion;
+CREATE POLICY "pe_all" ON protocolos_evaluacion FOR ALL USING (ingeniero_id = auth.uid());
+
+-- ───────────────────────────────────────────────────────────────
+-- Ensayos comparativos
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ensayos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  finca_id UUID NOT NULL,
+  ingeniero_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  protocolo_id UUID REFERENCES protocolos_evaluacion(id),
+  titulo TEXT NOT NULL,
+  objetivo TEXT,
+  fecha_inicio DATE,
+  fecha_fin DATE,
+  intervalo_dias INTEGER DEFAULT 10,
+  duracion_dias INTEGER DEFAULT 49,
+  estado TEXT DEFAULT 'activo',
+  resultados_json JSONB,
+  conclusiones TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE ensayos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "ens_all" ON ensayos;
+CREATE POLICY "ens_all" ON ensayos FOR ALL USING (ingeniero_id = auth.uid());
+
+CREATE TABLE IF NOT EXISTS ensayo_tratamientos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ensayo_id UUID NOT NULL REFERENCES ensayos(id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  producto TEXT,
+  dosis NUMERIC,
+  unidad_dosis TEXT,
+  agua_lt NUMERIC DEFAULT 80,
+  metodo TEXT,
+  es_testigo BOOLEAN DEFAULT false,
+  orden INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE ensayo_tratamientos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "et_all" ON ensayo_tratamientos;
+CREATE POLICY "et_all" ON ensayo_tratamientos FOR ALL USING (
+  ensayo_id IN (SELECT id FROM ensayos WHERE ingeniero_id = auth.uid())
+);
+
+CREATE TABLE IF NOT EXISTS ensayo_evaluaciones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ensayo_id UUID NOT NULL REFERENCES ensayos(id) ON DELETE CASCADE,
+  tratamiento_id UUID NOT NULL REFERENCES ensayo_tratamientos(id) ON DELETE CASCADE,
+  fecha DATE NOT NULL,
+  repeticion INTEGER NOT NULL,
+  valores JSONB DEFAULT '{}',
+  resultado JSONB DEFAULT '{}',
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE ensayo_evaluaciones ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "ee_all" ON ensayo_evaluaciones;
+CREATE POLICY "ee_all" ON ensayo_evaluaciones FOR ALL USING (
+  ensayo_id IN (SELECT id FROM ensayos WHERE ingeniero_id = auth.uid())
+);
+
+-- ───────────────────────────────────────────────────────────────
+-- Prescripciones fitosanitarias
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS prescripciones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ingeniero_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  finca_id UUID NOT NULL,
+  agricultor_id UUID,
+  inspeccion_id UUID,
+  producto TEXT NOT NULL,
+  ingrediente_activo TEXT,
+  dosis TEXT,
+  unidad_dosis TEXT,
+  metodo_aplicacion TEXT,
+  intervalo_dias INTEGER,
+  num_aplicaciones INTEGER DEFAULT 1,
+  carencia_dias INTEGER,
+  precauciones TEXT,
+  estado TEXT DEFAULT 'pendiente',
+  fecha_inicio DATE,
+  fecha_fin DATE,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE prescripciones ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "presc_select" ON prescripciones;
+CREATE POLICY "presc_select" ON prescripciones FOR SELECT USING (
+  ingeniero_id = auth.uid() OR agricultor_id = auth.uid()
+);
+DROP POLICY IF EXISTS "presc_insert" ON prescripciones;
+CREATE POLICY "presc_insert" ON prescripciones FOR INSERT WITH CHECK (ingeniero_id = auth.uid());
+DROP POLICY IF EXISTS "presc_update" ON prescripciones;
+CREATE POLICY "presc_update" ON prescripciones FOR UPDATE USING (
+  ingeniero_id = auth.uid() OR agricultor_id = auth.uid()
+);
+DROP POLICY IF EXISTS "presc_delete" ON prescripciones;
+CREATE POLICY "presc_delete" ON prescripciones FOR DELETE USING (ingeniero_id = auth.uid());
+
+-- ───────────────────────────────────────────────────────────────
+-- Catálogo de productos del ingeniero
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS productos_ingeniero (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ingeniero_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  ingrediente_activo TEXT,
+  tipo TEXT DEFAULT 'fungicida',
+  registro_sanitario TEXT,
+  cultivos_autorizados JSONB DEFAULT '[]',
+  dosis_recomendada TEXT,
+  carencia_dias INTEGER,
+  precio NUMERIC DEFAULT 0,
+  unidad_venta TEXT DEFAULT 'litro',
+  stock NUMERIC DEFAULT 0,
+  toxicidad TEXT DEFAULT 'IV',
+  activo BOOLEAN DEFAULT true,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE productos_ingeniero ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "pi_all" ON productos_ingeniero;
+CREATE POLICY "pi_all" ON productos_ingeniero FOR ALL USING (ingeniero_id = auth.uid());
+
+-- ───────────────────────────────────────────────────────────────
+-- Ventas de insumos
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ventas_insumos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ingeniero_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  agricultor_id UUID NOT NULL,
+  finca_id UUID,
+  prescripcion_id UUID,
+  fecha DATE NOT NULL,
+  total NUMERIC DEFAULT 0,
+  forma_pago TEXT DEFAULT 'efectivo',
+  cobrado BOOLEAN DEFAULT true,
+  fecha_cobro DATE,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE ventas_insumos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "vi_all" ON ventas_insumos;
+CREATE POLICY "vi_all" ON ventas_insumos FOR ALL USING (ingeniero_id = auth.uid());
+
+CREATE TABLE IF NOT EXISTS ventas_insumos_detalle (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  venta_id UUID NOT NULL REFERENCES ventas_insumos(id) ON DELETE CASCADE,
+  producto_id UUID NOT NULL REFERENCES productos_ingeniero(id),
+  cantidad NUMERIC DEFAULT 1,
+  precio_unitario NUMERIC DEFAULT 0,
+  total NUMERIC DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE ventas_insumos_detalle ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "vid_all" ON ventas_insumos_detalle;
+CREATE POLICY "vid_all" ON ventas_insumos_detalle FOR ALL USING (
+  venta_id IN (SELECT id FROM ventas_insumos WHERE ingeniero_id = auth.uid())
+);
+
+-- ───────────────────────────────────────────────────────────────
+-- Programación de inspecciones y visitas
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS programacion_inspecciones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ingeniero_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  finca_id UUID NOT NULL,
+  area_id UUID,
+  frecuencia TEXT DEFAULT 'quincenal',
+  dias_intervalo INTEGER DEFAULT 14,
+  proxima_visita DATE,
+  estado TEXT DEFAULT 'activa',
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE programacion_inspecciones ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "pi2_all" ON programacion_inspecciones;
+CREATE POLICY "pi2_all" ON programacion_inspecciones FOR ALL USING (ingeniero_id = auth.uid());
+
+CREATE TABLE IF NOT EXISTS visitas_tecnicas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ingeniero_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  finca_id UUID NOT NULL,
+  fecha DATE NOT NULL,
+  hora_llegada TEXT,
+  hora_salida TEXT,
+  latitud NUMERIC,
+  longitud NUMERIC,
+  tipo TEXT DEFAULT 'programada',
+  resumen TEXT,
+  inspeccion_id UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE visitas_tecnicas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "vt_all" ON visitas_tecnicas;
+CREATE POLICY "vt_all" ON visitas_tecnicas FOR ALL USING (ingeniero_id = auth.uid());
+
+-- ───────────────────────────────────────────────────────────────
+-- Chat: Grupos y Miembros (MUST be created before conversaciones)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS chat_grupos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ingeniero_id UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  tipo TEXT DEFAULT 'zona',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE chat_grupos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cg_all" ON chat_grupos;
+CREATE POLICY "cg_all" ON chat_grupos FOR ALL USING (ingeniero_id = auth.uid());
+
+CREATE TABLE IF NOT EXISTS chat_grupo_miembros (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  grupo_id UUID NOT NULL REFERENCES chat_grupos(id) ON DELETE CASCADE,
+  usuario_id UUID NOT NULL REFERENCES auth.users,
+  fecha_union TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE chat_grupo_miembros ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cgm_select" ON chat_grupo_miembros;
+CREATE POLICY "cgm_select" ON chat_grupo_miembros FOR SELECT USING (
+  usuario_id = auth.uid() OR grupo_id IN (SELECT id FROM chat_grupos WHERE ingeniero_id = auth.uid())
+);
+DROP POLICY IF EXISTS "cgm_insert" ON chat_grupo_miembros;
+CREATE POLICY "cgm_insert" ON chat_grupo_miembros FOR INSERT WITH CHECK (
+  grupo_id IN (SELECT id FROM chat_grupos WHERE ingeniero_id = auth.uid())
+);
+DROP POLICY IF EXISTS "cgm_delete" ON chat_grupo_miembros;
+CREATE POLICY "cgm_delete" ON chat_grupo_miembros FOR DELETE USING (
+  grupo_id IN (SELECT id FROM chat_grupos WHERE ingeniero_id = auth.uid())
+);
+
+-- ───────────────────────────────────────────────────────────────
+-- Chat: Conversaciones y Mensajes (after grupos/miembros)
+-- ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS chat_conversaciones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tipo TEXT DEFAULT 'directa',
+  grupo_id UUID,
+  participante_1 UUID REFERENCES auth.users,
+  participante_2 UUID REFERENCES auth.users,
+  ultimo_mensaje TEXT,
+  ultimo_mensaje_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE chat_conversaciones ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cc_select" ON chat_conversaciones;
+CREATE POLICY "cc_select" ON chat_conversaciones FOR SELECT USING (
+  participante_1 = auth.uid() OR participante_2 = auth.uid()
+  OR grupo_id IN (SELECT grupo_id FROM chat_grupo_miembros WHERE usuario_id = auth.uid())
+);
+DROP POLICY IF EXISTS "cc_insert" ON chat_conversaciones;
+CREATE POLICY "cc_insert" ON chat_conversaciones FOR INSERT WITH CHECK (
+  participante_1 = auth.uid() OR participante_2 = auth.uid()
+);
+DROP POLICY IF EXISTS "cc_update" ON chat_conversaciones;
+CREATE POLICY "cc_update" ON chat_conversaciones FOR UPDATE USING (
+  participante_1 = auth.uid() OR participante_2 = auth.uid()
+);
+
+CREATE TABLE IF NOT EXISTS chat_mensajes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversacion_id UUID NOT NULL REFERENCES chat_conversaciones(id) ON DELETE CASCADE,
+  emisor_id UUID NOT NULL REFERENCES auth.users,
+  tipo TEXT DEFAULT 'texto',
+  contenido TEXT,
+  archivo_url TEXT,
+  leido BOOLEAN DEFAULT false,
+  vinculo_inspeccion_id UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE chat_mensajes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cm_select" ON chat_mensajes;
+CREATE POLICY "cm_select" ON chat_mensajes FOR SELECT USING (
+  conversacion_id IN (
+    SELECT id FROM chat_conversaciones
+    WHERE participante_1 = auth.uid() OR participante_2 = auth.uid()
+    UNION
+    SELECT c.id FROM chat_conversaciones c
+    JOIN chat_grupo_miembros gm ON gm.grupo_id = c.grupo_id
+    WHERE gm.usuario_id = auth.uid()
+  )
+);
+DROP POLICY IF EXISTS "cm_insert" ON chat_mensajes;
+CREATE POLICY "cm_insert" ON chat_mensajes FOR INSERT WITH CHECK (emisor_id = auth.uid());
+DROP POLICY IF EXISTS "cm_update" ON chat_mensajes;
+CREATE POLICY "cm_update" ON chat_mensajes FOR UPDATE USING (
+  emisor_id = auth.uid() OR conversacion_id IN (
+    SELECT id FROM chat_conversaciones WHERE participante_1 = auth.uid() OR participante_2 = auth.uid()
+  )
+);
+
+-- Enable Realtime on chat_mensajes for WebSocket subscriptions
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE chat_mensajes;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

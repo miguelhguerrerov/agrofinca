@@ -227,12 +227,93 @@ const AIDataHelpers = (() => {
     };
   }
 
+  // ══════════════════════════════════════════
+  // INGENIERO: Multi-finca context for AI
+  // ══════════════════════════════════════════
+  async function getIngenieroContext(ingenieroId) {
+    try {
+      const afiliaciones = await AgroDB.query('ingeniero_agricultores',
+        r => r.ingeniero_id === ingenieroId && r.estado === 'activo');
+
+      const fincasResumen = [];
+      let totalAreaM2 = 0;
+      let totalCiclosActivos = 0;
+      const alertas = [];
+      const cultivosSet = new Set();
+
+      for (const af of afiliaciones) {
+        // Get agricultor's fincas
+        const fincas = await AgroDB.query('fincas', r => r.propietario_id === af.agricultor_id);
+        for (const finca of fincas) {
+          const areas = await AgroDB.getByIndex('areas', 'finca_id', finca.id);
+          const ciclos = await AgroDB.getByIndex('ciclos_productivos', 'finca_id', finca.id);
+          const activos = ciclos.filter(c => c.estado === 'activo');
+          const inspecciones = await AgroDB.getByIndex('inspecciones', 'finca_id', finca.id);
+          const ultimaInsp = inspecciones.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0];
+          const diasSinInsp = ultimaInsp?.fecha
+            ? Math.floor((Date.now() - new Date(ultimaInsp.fecha)) / 86400000) : 999;
+
+          const areaM2 = areas.reduce((s, a) => s + (a.area_m2 || 0), 0);
+          totalAreaM2 += areaM2;
+          totalCiclosActivos += activos.length;
+          activos.forEach(c => cultivosSet.add(c.cultivo_nombre));
+
+          fincasResumen.push({
+            nombre: finca.nombre,
+            ubicacion: finca.ubicacion,
+            areas: areas.length,
+            ha: (areaM2 / 10000).toFixed(2),
+            ciclos_activos: activos.length,
+            cultivos: [...new Set(activos.map(c => c.cultivo_nombre))],
+            dias_sin_inspeccion: diasSinInsp,
+            estado_fitosanitario: diasSinInsp < 14 ? 'bueno' : diasSinInsp < 30 ? 'alerta' : 'critico'
+          });
+
+          if (diasSinInsp > 30) {
+            alertas.push(`${finca.nombre} lleva ${diasSinInsp} días sin inspección`);
+          }
+          if (ultimaInsp?.estado_general === 'malo' || ultimaInsp?.estado_general === 'critico') {
+            alertas.push(`${finca.nombre}: último estado fitosanitario ${ultimaInsp.estado_general}`);
+          }
+        }
+      }
+
+      // Prescripciones pendientes
+      const prescripciones = await AgroDB.query('prescripciones',
+        r => r.ingeniero_id === ingenieroId && (r.estado === 'pendiente' || r.estado === 'en_ejecucion'));
+
+      // Próximas visitas
+      const hoy = new Date().toISOString().slice(0, 10);
+      const programacion = await AgroDB.query('programacion_inspecciones',
+        r => r.ingeniero_id === ingenieroId && r.estado === 'activa');
+      const visitasPendientes = programacion.filter(p => p.proxima_visita && p.proxima_visita <= hoy);
+
+      return {
+        rol: 'ingeniero',
+        total_agricultores: afiliaciones.length,
+        total_fincas: fincasResumen.length,
+        superficie_total_ha: (totalAreaM2 / 10000).toFixed(2),
+        ciclos_activos: totalCiclosActivos,
+        cultivos_en_cartera: [...cultivosSet],
+        fincas: fincasResumen.slice(0, 10),
+        alertas: alertas.slice(0, 5),
+        prescripciones_activas: prescripciones.length,
+        visitas_pendientes: visitasPendientes.length,
+        resumen: `Ingeniero con ${afiliaciones.length} agricultores, ${fincasResumen.length} fincas, ${(totalAreaM2 / 10000).toFixed(1)} ha total. Cultivos: ${[...cultivosSet].join(', ')}. ${alertas.length} alertas activas.`
+      };
+    } catch (e) {
+      console.warn('[AIDataHelpers] Error en getIngenieroContext', e);
+      return { rol: 'ingeniero', error: 'No se pudo cargar contexto' };
+    }
+  }
+
   return {
     getFarmSummary,
     getCropStats,
     getAreaStats,
     getFinancialSummary,
     getPendingIssues,
-    getDailyTipContext
+    getDailyTipContext,
+    getIngenieroContext
   };
 })();

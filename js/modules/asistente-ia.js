@@ -1100,7 +1100,14 @@ IMPORTANTE: Usa IDs reales de la finca para area_id, cultivo_id y ciclo_id. Camp
 
       let baseContext;
 
-      if (typeof AIDataHelpers !== 'undefined') {
+      // Ingeniero: multi-finca context
+      if (typeof AuthModule !== 'undefined' && AuthModule.isIngeniero && AuthModule.isIngeniero()) {
+        if (typeof AIDataHelpers !== 'undefined' && AIDataHelpers.getIngenieroContext) {
+          baseContext = await AIDataHelpers.getIngenieroContext(AuthModule.getUserId());
+        } else {
+          baseContext = { rol: 'ingeniero', fincaNombre: 'Cartera de fincas' };
+        }
+      } else if (typeof AIDataHelpers !== 'undefined') {
         const [farm, issues, cropStats] = await Promise.all([
           AIDataHelpers.getFarmSummary(fincaId),
           AIDataHelpers.getPendingIssues(fincaId),

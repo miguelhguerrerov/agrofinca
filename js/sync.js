@@ -44,7 +44,11 @@ const SyncEngine = (() => {
     'colmenas', 'inspecciones_colmena', 'camas_lombricompost', 'registros_lombricompost',
     'ai_conversations', 'ai_chat_history',
     'tareas', 'inspecciones', 'fotos_inspeccion', 'aplicaciones_fitosanitarias',
-    'lotes_animales', 'registros_animales'
+    'lotes_animales', 'registros_animales',
+    'ingeniero_agricultores', 'protocolos_evaluacion', 'productos_ingeniero', 'chat_grupos',
+    'ensayos', 'prescripciones', 'programacion_inspecciones', 'chat_conversaciones', 'chat_grupo_miembros',
+    'ensayo_tratamientos', 'ventas_insumos', 'visitas_tecnicas',
+    'ensayo_evaluaciones', 'ventas_insumos_detalle', 'chat_mensajes'
   ];
 
   // Push order: parent tables must be pushed before child tables (FK dependencies)
@@ -58,7 +62,11 @@ const SyncEngine = (() => {
     'cosechas', 'ventas', 'costos', 'depreciacion_mensual',
     'inspecciones_colmena', 'registros_lombricompost',
     'tareas', 'inspecciones',
-    'fotos_inspeccion', 'aplicaciones_fitosanitarias', 'registros_animales'
+    'fotos_inspeccion', 'aplicaciones_fitosanitarias', 'registros_animales',
+    'ingeniero_agricultores', 'protocolos_evaluacion', 'productos_ingeniero', 'chat_grupos',
+    'ensayos', 'prescripciones', 'programacion_inspecciones', 'chat_conversaciones', 'chat_grupo_miembros',
+    'ensayo_tratamientos', 'ventas_insumos', 'visitas_tecnicas',
+    'ensayo_evaluaciones', 'ventas_insumos_detalle', 'chat_mensajes'
   ];
 
   // Tables that should NEVER sync (local-only)
@@ -86,10 +94,10 @@ const SyncEngine = (() => {
     inspecciones_colmena: ['id', 'finca_id', 'colmena_id', 'fecha', 'tipo', 'estado_general', 'poblacion', 'reina_vista', 'crias', 'miel', 'plagas', 'notas', 'created_at', 'updated_at'],
     camas_lombricompost: ['id', 'finca_id', 'nombre', 'tipo', 'estado', 'ubicacion', 'fecha_inicio', 'notas', 'created_at', 'updated_at'],
     registros_lombricompost: ['id', 'finca_id', 'cama_id', 'fecha', 'tipo', 'descripcion', 'cantidad', 'unidad', 'notas', 'created_at', 'updated_at'],
-    tareas: ['id', 'finca_id', 'titulo', 'descripcion', 'fecha_programada', 'fecha_completada', 'estado', 'prioridad', 'asignado_a', 'area_id', 'area_nombre', 'ciclo_id', 'ciclo_nombre', 'cultivo_id', 'cultivo_nombre', 'hora_inicio', 'duracion_minutos', 'recurrente', 'frecuencia_dias', 'completada_en', 'completada_por', 'creado_por', 'notas', 'created_at', 'updated_at'],
-    inspecciones: ['id', 'finca_id', 'area_id', 'area_nombre', 'ciclo_id', 'cultivo_nombre', 'fecha', 'tipo', 'estado_general', 'plagas', 'enfermedades', 'recomendaciones', 'notas', 'created_at', 'updated_at'],
+    tareas: ['id', 'finca_id', 'titulo', 'descripcion', 'fecha_programada', 'fecha_completada', 'estado', 'prioridad', 'asignado_a', 'area_id', 'area_nombre', 'ciclo_id', 'ciclo_nombre', 'cultivo_id', 'cultivo_nombre', 'hora_inicio', 'duracion_minutos', 'recurrente', 'frecuencia_dias', 'completada_en', 'completada_por', 'creado_por', 'notas', 'asignado_por_ingeniero', 'created_at', 'updated_at'],
+    inspecciones: ['id', 'finca_id', 'area_id', 'area_nombre', 'ciclo_id', 'cultivo_nombre', 'fecha', 'tipo', 'estado_general', 'plagas', 'enfermedades', 'recomendaciones', 'notas', 'ingeniero_id', 'protocolo_id', 'datos_evaluacion', 'condiciones_ambientales', 'created_at', 'updated_at'],
     fotos_inspeccion: ['id', 'finca_id', 'inspeccion_id', 'url', 'descripcion', 'tipo', 'created_at', 'updated_at'],
-    aplicaciones_fitosanitarias: ['id', 'finca_id', 'area_id', 'ciclo_id', 'cultivo_nombre', 'destino', 'tipo_producto', 'nombre_producto', 'ingrediente_activo', 'fecha', 'producto', 'dosis', 'unidad_dosis', 'metodo', 'objetivo', 'periodo_carencia_dias', 'area_aplicada_m2', 'colmena_id', 'cama_id', 'notas', 'created_at', 'updated_at'],
+    aplicaciones_fitosanitarias: ['id', 'finca_id', 'area_id', 'ciclo_id', 'cultivo_nombre', 'destino', 'tipo_producto', 'nombre_producto', 'ingrediente_activo', 'fecha', 'producto', 'dosis', 'unidad_dosis', 'metodo', 'objetivo', 'periodo_carencia_dias', 'area_aplicada_m2', 'colmena_id', 'cama_id', 'notas', 'prescripcion_id', 'created_at', 'updated_at'],
     lotes_animales: ['id', 'finca_id', 'nombre', 'tipo_animal', 'cantidad', 'raza', 'area_id', 'notas', 'created_at', 'updated_at'],
     registros_animales: ['id', 'finca_id', 'lote_id', 'tipo', 'fecha', 'descripcion', 'cantidad', 'costo', 'producto', 'notas', 'created_at', 'updated_at'],
     ai_conversations: ['id', 'finca_id', 'usuario_id', 'title', 'message_count', 'created_at', 'updated_at'],
@@ -99,7 +107,22 @@ const SyncEngine = (() => {
     depreciacion_mensual: ['id', 'finca_id', 'activo_id', 'mes', 'monto', 'area_id', 'cultivo_id', 'created_at', 'updated_at'],
     clientes: ['id', 'finca_id', 'nombre', 'telefono', 'email', 'ubicacion', 'tipo', 'notas', 'activo', 'created_at', 'updated_at'],
     proveedores: ['id', 'finca_id', 'nombre', 'telefono', 'email', 'ubicacion', 'tipo', 'productos_frecuentes', 'notas', 'activo', 'created_at', 'updated_at'],
-    fases_fenologicas: ['id', 'finca_id', 'ciclo_id', 'nombre', 'orden', 'fecha_inicio', 'fecha_fin', 'estado', 'genera_ingresos', 'duracion_estimada_dias', 'descripcion', 'notas', 'created_at', 'updated_at']
+    fases_fenologicas: ['id', 'finca_id', 'ciclo_id', 'nombre', 'orden', 'fecha_inicio', 'fecha_fin', 'estado', 'genera_ingresos', 'duracion_estimada_dias', 'descripcion', 'notas', 'created_at', 'updated_at'],
+    ingeniero_agricultores: ['id', 'ingeniero_id', 'agricultor_id', 'estado', 'fecha_afiliacion', 'notas', 'created_at', 'updated_at'],
+    protocolos_evaluacion: ['id', 'ingeniero_id', 'nombre', 'cultivo_id', 'plaga_objetivo', 'variables', 'repeticiones', 'escala', 'formulas', 'descripcion', 'activo', 'created_at', 'updated_at'],
+    ensayos: ['id', 'finca_id', 'ingeniero_id', 'protocolo_id', 'titulo', 'objetivo', 'fecha_inicio', 'fecha_fin', 'intervalo_dias', 'duracion_dias', 'estado', 'resultados_json', 'conclusiones', 'created_at', 'updated_at'],
+    ensayo_tratamientos: ['id', 'ensayo_id', 'nombre', 'producto', 'dosis', 'unidad_dosis', 'agua_lt', 'metodo', 'es_testigo', 'orden', 'created_at', 'updated_at'],
+    ensayo_evaluaciones: ['id', 'ensayo_id', 'tratamiento_id', 'fecha', 'repeticion', 'valores', 'resultado', 'notas', 'created_at', 'updated_at'],
+    prescripciones: ['id', 'ingeniero_id', 'finca_id', 'agricultor_id', 'inspeccion_id', 'producto', 'ingrediente_activo', 'dosis', 'unidad_dosis', 'metodo_aplicacion', 'intervalo_dias', 'num_aplicaciones', 'carencia_dias', 'precauciones', 'estado', 'fecha_inicio', 'fecha_fin', 'notas', 'created_at', 'updated_at'],
+    productos_ingeniero: ['id', 'ingeniero_id', 'nombre', 'ingrediente_activo', 'tipo', 'registro_sanitario', 'cultivos_autorizados', 'dosis_recomendada', 'carencia_dias', 'precio', 'unidad_venta', 'stock', 'toxicidad', 'activo', 'notas', 'created_at', 'updated_at'],
+    ventas_insumos: ['id', 'ingeniero_id', 'agricultor_id', 'finca_id', 'prescripcion_id', 'fecha', 'total', 'forma_pago', 'cobrado', 'fecha_cobro', 'notas', 'created_at', 'updated_at'],
+    ventas_insumos_detalle: ['id', 'venta_id', 'producto_id', 'cantidad', 'precio_unitario', 'total', 'created_at', 'updated_at'],
+    programacion_inspecciones: ['id', 'ingeniero_id', 'finca_id', 'area_id', 'frecuencia', 'dias_intervalo', 'proxima_visita', 'estado', 'notas', 'created_at', 'updated_at'],
+    visitas_tecnicas: ['id', 'ingeniero_id', 'finca_id', 'fecha', 'hora_llegada', 'hora_salida', 'latitud', 'longitud', 'tipo', 'resumen', 'inspeccion_id', 'created_at', 'updated_at'],
+    chat_conversaciones: ['id', 'tipo', 'grupo_id', 'participante_1', 'participante_2', 'ultimo_mensaje', 'ultimo_mensaje_at', 'created_at', 'updated_at'],
+    chat_mensajes: ['id', 'conversacion_id', 'emisor_id', 'tipo', 'contenido', 'archivo_url', 'leido', 'vinculo_inspeccion_id', 'created_at', 'updated_at'],
+    chat_grupos: ['id', 'ingeniero_id', 'nombre', 'descripcion', 'tipo', 'created_at', 'updated_at'],
+    chat_grupo_miembros: ['id', 'grupo_id', 'usuario_id', 'fecha_union', 'created_at', 'updated_at']
   };
 
   // Tables that DON'T have finca_id column

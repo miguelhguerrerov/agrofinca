@@ -5,7 +5,7 @@
 
 const AgroDB = (() => {
   const DB_NAME = 'agrofinca_db';
-  const DB_VERSION = 7;
+  const DB_VERSION = 8;
   let db = null;
 
   // All object stores (tables)
@@ -39,7 +39,22 @@ const AgroDB = (() => {
     'depreciacion_mensual',
     'clientes',
     'proveedores',
-    'fases_fenologicas'
+    'fases_fenologicas',
+    'ingeniero_agricultores',
+    'protocolos_evaluacion',
+    'ensayos',
+    'ensayo_tratamientos',
+    'ensayo_evaluaciones',
+    'prescripciones',
+    'productos_ingeniero',
+    'ventas_insumos',
+    'ventas_insumos_detalle',
+    'programacion_inspecciones',
+    'visitas_tecnicas',
+    'chat_conversaciones',
+    'chat_mensajes',
+    'chat_grupos',
+    'chat_grupo_miembros'
   ];
 
   // Initialize database
@@ -303,6 +318,133 @@ const AgroDB = (() => {
           const store = database.createObjectStore('fases_fenologicas', { keyPath: 'id' });
           store.createIndex('finca_id', 'finca_id', { unique: false });
           store.createIndex('ciclo_id', 'ciclo_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- ingeniero_agricultores (relación ingeniero-agricultor) ---
+        if (!database.objectStoreNames.contains('ingeniero_agricultores')) {
+          const store = database.createObjectStore('ingeniero_agricultores', { keyPath: 'id' });
+          store.createIndex('ingeniero_id', 'ingeniero_id', { unique: false });
+          store.createIndex('agricultor_id', 'agricultor_id', { unique: false });
+          store.createIndex('estado', 'estado', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- protocolos_evaluacion ---
+        if (!database.objectStoreNames.contains('protocolos_evaluacion')) {
+          const store = database.createObjectStore('protocolos_evaluacion', { keyPath: 'id' });
+          store.createIndex('ingeniero_id', 'ingeniero_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- ensayos ---
+        if (!database.objectStoreNames.contains('ensayos')) {
+          const store = database.createObjectStore('ensayos', { keyPath: 'id' });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('ingeniero_id', 'ingeniero_id', { unique: false });
+          store.createIndex('protocolo_id', 'protocolo_id', { unique: false });
+          store.createIndex('estado', 'estado', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- ensayo_tratamientos ---
+        if (!database.objectStoreNames.contains('ensayo_tratamientos')) {
+          const store = database.createObjectStore('ensayo_tratamientos', { keyPath: 'id' });
+          store.createIndex('ensayo_id', 'ensayo_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- ensayo_evaluaciones ---
+        if (!database.objectStoreNames.contains('ensayo_evaluaciones')) {
+          const store = database.createObjectStore('ensayo_evaluaciones', { keyPath: 'id' });
+          store.createIndex('ensayo_id', 'ensayo_id', { unique: false });
+          store.createIndex('tratamiento_id', 'tratamiento_id', { unique: false });
+          store.createIndex('fecha', 'fecha', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- prescripciones ---
+        if (!database.objectStoreNames.contains('prescripciones')) {
+          const store = database.createObjectStore('prescripciones', { keyPath: 'id' });
+          store.createIndex('ingeniero_id', 'ingeniero_id', { unique: false });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('agricultor_id', 'agricultor_id', { unique: false });
+          store.createIndex('inspeccion_id', 'inspeccion_id', { unique: false });
+          store.createIndex('estado', 'estado', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- productos_ingeniero ---
+        if (!database.objectStoreNames.contains('productos_ingeniero')) {
+          const store = database.createObjectStore('productos_ingeniero', { keyPath: 'id' });
+          store.createIndex('ingeniero_id', 'ingeniero_id', { unique: false });
+          store.createIndex('tipo', 'tipo', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- ventas_insumos ---
+        if (!database.objectStoreNames.contains('ventas_insumos')) {
+          const store = database.createObjectStore('ventas_insumos', { keyPath: 'id' });
+          store.createIndex('ingeniero_id', 'ingeniero_id', { unique: false });
+          store.createIndex('agricultor_id', 'agricultor_id', { unique: false });
+          store.createIndex('fecha', 'fecha', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- ventas_insumos_detalle ---
+        if (!database.objectStoreNames.contains('ventas_insumos_detalle')) {
+          const store = database.createObjectStore('ventas_insumos_detalle', { keyPath: 'id' });
+          store.createIndex('venta_id', 'venta_id', { unique: false });
+          store.createIndex('producto_id', 'producto_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- programacion_inspecciones ---
+        if (!database.objectStoreNames.contains('programacion_inspecciones')) {
+          const store = database.createObjectStore('programacion_inspecciones', { keyPath: 'id' });
+          store.createIndex('ingeniero_id', 'ingeniero_id', { unique: false });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- visitas_tecnicas ---
+        if (!database.objectStoreNames.contains('visitas_tecnicas')) {
+          const store = database.createObjectStore('visitas_tecnicas', { keyPath: 'id' });
+          store.createIndex('ingeniero_id', 'ingeniero_id', { unique: false });
+          store.createIndex('finca_id', 'finca_id', { unique: false });
+          store.createIndex('fecha', 'fecha', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- chat_conversaciones ---
+        if (!database.objectStoreNames.contains('chat_conversaciones')) {
+          const store = database.createObjectStore('chat_conversaciones', { keyPath: 'id' });
+          store.createIndex('participante_1', 'participante_1', { unique: false });
+          store.createIndex('participante_2', 'participante_2', { unique: false });
+          store.createIndex('tipo', 'tipo', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- chat_mensajes ---
+        if (!database.objectStoreNames.contains('chat_mensajes')) {
+          const store = database.createObjectStore('chat_mensajes', { keyPath: 'id' });
+          store.createIndex('conversacion_id', 'conversacion_id', { unique: false });
+          store.createIndex('emisor_id', 'emisor_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- chat_grupos ---
+        if (!database.objectStoreNames.contains('chat_grupos')) {
+          const store = database.createObjectStore('chat_grupos', { keyPath: 'id' });
+          store.createIndex('ingeniero_id', 'ingeniero_id', { unique: false });
+          store.createIndex('synced', 'synced', { unique: false });
+        }
+
+        // --- chat_grupo_miembros ---
+        if (!database.objectStoreNames.contains('chat_grupo_miembros')) {
+          const store = database.createObjectStore('chat_grupo_miembros', { keyPath: 'id' });
+          store.createIndex('grupo_id', 'grupo_id', { unique: false });
+          store.createIndex('usuario_id', 'usuario_id', { unique: false });
           store.createIndex('synced', 'synced', { unique: false });
         }
       };

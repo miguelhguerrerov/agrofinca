@@ -304,6 +304,97 @@ const SupabaseClient = (() => {
     return upsert('user_profiles', profile);
   }
 
+  // ══════════════════════════════════════════
+  // REALTIME (WebSocket for chat)
+  // ══════════════════════════════════════════
+  let _rtSocket = null;
+  let _rtChannels = {};
+  let _rtRef = 0;
+  let _rtHeartbeatTimer = null;
+  let _rtReconnectTimer = null;
+
+  function connectRealtime() {
+    if (_rtSocket && _rtSocket.readyState <= 1) return; // already open/connecting
+    const token = localStorage.getItem('agrofinca_access_token');
+    if (!token) return;
+
+    const wsUrl = AppConfig.SUPABASE_URL.replace('https://', 'wss://')
+      + '/realtime/v1/websocket?apikey=' + AppConfig.SUPABASE_ANON_KEY + '&vsn=1.0.0';
+
+    _rtSocket = new WebSocket(wsUrl);
+
+    _rtSocket.onopen = () => {
+      console.log('[Realtime] Connected');
+      // Authenticate
+      _rtSend('realtime:*', 'phx_join', { access_token: token });
+      // Start heartbeat
+      _rtHeartbeatTimer = setInterval(() => {
+        _rtSend('phoenix', 'heartbeat', {});
+      }, 30000);
+      // Re-subscribe existing channels
+      for (const [name, ch] of Object.entries(_rtChannels)) {
+        _rtJoinChannel(ch.topic);
+      }
+    };
+
+    _rtSocket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        // Route INSERT/UPDATE/DELETE events to callbacks
+        if (msg.event === 'INSERT' || msg.event === 'UPDATE' || msg.event === 'DELETE') {
+          const ch = Object.values(_rtChannels).find(c => c.topic === msg.topic);
+          if (ch && ch.callback) ch.callback(msg.event, msg.payload?.record || msg.payload);
+        }
+      } catch (e) {}
+    };
+
+    _rtSocket.onclose = () => {
+      console.log('[Realtime] Disconnected');
+      clearInterval(_rtHeartbeatTimer);
+      // Auto-reconnect after 5s
+      _rtReconnectTimer = setTimeout(() => connectRealtime(), 5000);
+    };
+
+    _rtSocket.onerror = () => {};
+  }
+
+  function _rtSend(topic, event, payload) {
+    if (!_rtSocket || _rtSocket.readyState !== 1) return;
+    _rtSocket.send(JSON.stringify({
+      topic, event, payload, ref: String(++_rtRef)
+    }));
+  }
+
+  function _rtJoinChannel(topic) {
+    _rtSend(topic, 'phx_join', { user_token: localStorage.getItem('agrofinca_access_token') });
+  }
+
+  function subscribeToChat(conversacionId, callback) {
+    const topic = `realtime:public:chat_mensajes:conversacion_id=eq.${conversacionId}`;
+    _rtChannels[conversacionId] = { topic, callback };
+    if (_rtSocket && _rtSocket.readyState === 1) {
+      _rtJoinChannel(topic);
+    }
+  }
+
+  function unsubscribeChat(conversacionId) {
+    const ch = _rtChannels[conversacionId];
+    if (ch) {
+      _rtSend(ch.topic, 'phx_leave', {});
+      delete _rtChannels[conversacionId];
+    }
+  }
+
+  function disconnectRealtime() {
+    clearInterval(_rtHeartbeatTimer);
+    clearTimeout(_rtReconnectTimer);
+    _rtChannels = {};
+    if (_rtSocket) {
+      _rtSocket.close();
+      _rtSocket = null;
+    }
+  }
+
   return {
     signUp,
     signIn,
@@ -319,6 +410,10 @@ const SupabaseClient = (() => {
     clearTokens,
     callEdgeFunction,
     getUserProfile,
-    upsertUserProfile
+    upsertUserProfile,
+    connectRealtime,
+    subscribeToChat,
+    unsubscribeChat,
+    disconnectRealtime
   };
 })();

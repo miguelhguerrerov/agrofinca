@@ -1,5 +1,5 @@
 // AgroFinca Service Worker - Offline-First PWA
-const CACHE_NAME = 'agrofinca-v15';
+const CACHE_NAME = 'agrofinca-v16';
 
 // Use relative paths - resolved at install time via self.registration.scope
 const STATIC_FILES = [
@@ -36,6 +36,15 @@ const STATIC_FILES = [
   './js/modules/asistente-ia.js',
   './js/modules/admin.js',
   './js/modules/activos.js',
+  './js/modules/ing-dashboard.js',
+  './js/modules/ing-agricultores.js',
+  './js/modules/ing-inspecciones.js',
+  './js/modules/ing-prescripciones.js',
+  './js/modules/ing-productos.js',
+  './js/modules/ing-ventas.js',
+  './js/modules/ing-chat.js',
+  './js/modules/ing-calendario.js',
+  './js/modules/ing-reportes.js',
   './icons/icon-192.svg',
   './icons/icon-512.svg',
   './manifest.json'
@@ -150,16 +159,24 @@ self.addEventListener('sync', event => {
   }
 });
 
-// Push notification support (future)
+// Push notifications for chat
 self.addEventListener('push', event => {
-  if (event.data) {
+  if (!event.data) return;
+  try {
     const data = event.data.json();
     event.waitUntil(
       self.registration.showNotification(data.title || 'AgroFinca', {
-        body: data.body || 'Tienes una nueva notificación',
-        icon: './icons/icon-192.svg',
-        badge: './icons/icon-192.svg'
+        body: data.body || '',
+        icon: './icons/icon-192.png',
+        badge: './icons/icon-72.png',
+        data: { url: data.url || './' }
       })
     );
-  }
+  } catch (e) { console.warn('[SW] Push parse error', e); }
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = event.notification.data?.url || './';
+  event.waitUntil(clients.openWindow(url));
 });

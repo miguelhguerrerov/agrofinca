@@ -4,12 +4,12 @@
 
 AgroFinca usa dos capas de base de datos:
 
-1. **IndexedDB** (local, offline-first): Base de datos primaria en el navegador (`agrofinca_db`, version 7)
+1. **IndexedDB** (local, offline-first): Base de datos primaria en el navegador (`agrofinca_db`, version 8)
 2. **PostgreSQL** (remoto, Supabase): Base de datos en la nube para sincronizacion y persistencia
 
 ## IndexedDB - Object Stores (AgroDB)
 
-La base de datos local tiene **28 object stores**. Todos usan `id` (UUID) como keyPath.
+La base de datos local tiene **43 object stores** (28 originales + 15 nuevos en v4.0). Todos usan `id` (UUID) como keyPath.
 
 ### Stores sincronizados con Supabase
 
@@ -41,6 +41,21 @@ La base de datos local tiene **28 object stores**. Todos usan `id` (UUID) como k
 | `clientes` | finca_id, synced | Directorio de compradores |
 | `proveedores` | finca_id, synced | Directorio de proveedores |
 | `fases_fenologicas` | finca_id, ciclo_id, synced | Fases de cultivos perennes |
+| `ingeniero_agricultores` | ingeniero_id, agricultor_id, synced | Afiliacion ingeniero-agricultor |
+| `protocolos_evaluacion` | ingeniero_id, synced | Protocolos de evaluacion de campo |
+| `ensayos` | finca_id, ingeniero_id, synced | Ensayos de campo |
+| `ensayo_tratamientos` | ensayo_id, synced | Tratamientos dentro de ensayos |
+| `ensayo_evaluaciones` | ensayo_id, tratamiento_id, synced | Evaluaciones por tratamiento |
+| `prescripciones` | ingeniero_id, finca_id, synced | Prescripciones fitosanitarias |
+| `productos_ingeniero` | ingeniero_id, synced | Catalogo de productos del ingeniero |
+| `ventas_insumos` | ingeniero_id, finca_id, synced | Ventas de insumos a agricultores |
+| `ventas_insumos_detalle` | venta_id, synced | Detalle multi-linea de ventas |
+| `programacion_inspecciones` | ingeniero_id, finca_id, synced | Programacion periodica de visitas |
+| `visitas_tecnicas` | ingeniero_id, finca_id, synced | Registro GPS de visitas tecnicas |
+| `chat_grupos` | ingeniero_id, synced | Grupos de chat del ingeniero |
+| `chat_grupo_miembros` | grupo_id, usuario_id, synced | Miembros de grupos de chat |
+| `chat_conversaciones` | tipo, participante_1, synced | Conversaciones 1-a-1 y grupales |
+| `chat_mensajes` | conversacion_id, emisor_id, synced | Mensajes del chat |
 
 ### Stores solo locales (no se sincronizan)
 
@@ -61,6 +76,9 @@ Creada automaticamente por trigger `on_auth_user_created`.
 | id | UUID (PK) | - | FK a auth.users |
 | email | TEXT | - | Correo electronico |
 | nombre | TEXT | - | Nombre completo |
+| rol | TEXT | 'agricultor' | Rol: 'agricultor' o 'ingeniero' |
+| especialidad | TEXT | - | Especialidad del ingeniero (solo si rol='ingeniero') |
+| registro_profesional | TEXT | - | Numero de registro profesional (solo si rol='ingeniero') |
 | plan | TEXT | 'free' | Plan: free o paid |
 | plan_expires_at | TIMESTAMPTZ | - | Expiracion del plan |
 | is_admin | BOOLEAN | false | Es administrador |
@@ -316,14 +334,273 @@ Creada automaticamente por trigger `on_auth_user_created`.
 - **inspecciones_colmena**: id, finca_id, colmena_id, fecha, tipo, estado_general, poblacion, reina_vista, crias, miel, plagas, notas
 - **camas_lombricompost**: id, finca_id, nombre, tipo, estado, ubicacion, fecha_inicio, notas
 - **registros_lombricompost**: id, finca_id, cama_id, fecha, tipo, descripcion, cantidad, unidad, notas
-- **tareas**: id, finca_id, titulo, descripcion, fecha_programada, fecha_completada, estado, prioridad, asignado_a, area_id, ciclo_id, cultivo_id, hora_inicio, duracion_minutos, recurrente, frecuencia_dias, notas
-- **inspecciones**: id, finca_id, area_id, ciclo_id, fecha, tipo, estado_general, plagas, enfermedades, recomendaciones, notas
+- **tareas**: id, finca_id, titulo, descripcion, fecha_programada, fecha_completada, estado, prioridad, asignado_a, area_id, ciclo_id, cultivo_id, hora_inicio, duracion_minutos, recurrente, frecuencia_dias, notas, **asignado_por_ingeniero** (UUID, FK a auth.users - v4.0)
+- **inspecciones**: id, finca_id, area_id, ciclo_id, fecha, tipo, estado_general, plagas, enfermedades, recomendaciones, notas, **ingeniero_id** (UUID, FK a auth.users - v4.0), **protocolo_id** (UUID, FK a protocolos_evaluacion - v4.0), **datos_evaluacion** (JSONB - v4.0), **condiciones_ambientales** (JSONB - v4.0)
 - **fotos_inspeccion**: id, finca_id, inspeccion_id, url, descripcion, tipo
-- **aplicaciones_fitosanitarias**: id, finca_id, area_id, ciclo_id, cultivo_nombre, destino, tipo_producto, nombre_producto, ingrediente_activo, fecha, dosis, unidad_dosis, metodo, objetivo, periodo_carencia_dias, area_aplicada_m2, notas
+- **aplicaciones_fitosanitarias**: id, finca_id, area_id, ciclo_id, cultivo_nombre, destino, tipo_producto, nombre_producto, ingrediente_activo, fecha, dosis, unidad_dosis, metodo, objetivo, periodo_carencia_dias, area_aplicada_m2, notas, **prescripcion_id** (UUID, FK a prescripciones - v4.0)
 - **lotes_animales**: id, finca_id, nombre, tipo_animal, cantidad, raza, area_id, notas
 - **registros_animales**: id, finca_id, lote_id, tipo, fecha, descripcion, cantidad, costo, producto, notas
 - **ai_conversations**: id, finca_id, usuario_id, title, message_count
 - **ai_chat_history**: id, conversation_id, finca_id, usuario_id, role, content, image, timestamp
+
+### Tablas del Ingeniero Agronomo (v4.0)
+
+#### ingeniero_agricultores
+
+Relacion de afiliacion entre ingeniero y agricultor.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ingeniero_id | UUID (NOT NULL) | - | FK a auth.users (ingeniero) |
+| agricultor_id | UUID (NOT NULL) | - | FK a auth.users (agricultor) |
+| estado | TEXT | 'activo' | activo, inactivo |
+| fecha_afiliacion | DATE | - | Fecha de afiliacion |
+| notas | TEXT | - | Observaciones |
+
+#### protocolos_evaluacion
+
+Protocolos reutilizables para inspecciones estandarizadas.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ingeniero_id | UUID (NOT NULL) | - | FK a auth.users |
+| nombre | TEXT (NOT NULL) | - | Nombre del protocolo |
+| cultivo_id | UUID | - | FK a cultivos_catalogo |
+| plaga_objetivo | TEXT | - | Plaga o enfermedad objetivo |
+| variables | JSONB | - | Variables a evaluar |
+| repeticiones | INTEGER | - | Numero de repeticiones |
+| escala | JSONB | - | Escala de evaluacion |
+| formulas | JSONB | - | Formulas de calculo |
+| descripcion | TEXT | - | Descripcion |
+| activo | BOOLEAN | true | Si esta activo |
+
+#### ensayos
+
+Ensayos de campo con tratamientos y evaluaciones.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| finca_id | UUID (NOT NULL) | - | FK a fincas |
+| ingeniero_id | UUID (NOT NULL) | - | FK a auth.users |
+| protocolo_id | UUID | - | FK a protocolos_evaluacion |
+| titulo | TEXT (NOT NULL) | - | Titulo del ensayo |
+| objetivo | TEXT | - | Objetivo |
+| fecha_inicio | DATE | - | Inicio del ensayo |
+| fecha_fin | DATE | - | Fin del ensayo |
+| intervalo_dias | INTEGER | - | Intervalo entre evaluaciones |
+| duracion_dias | INTEGER | - | Duracion total en dias |
+| estado | TEXT | 'activo' | activo, completado, cancelado |
+| resultados_json | JSONB | - | Resultados calculados |
+| conclusiones | TEXT | - | Conclusiones |
+
+#### ensayo_tratamientos
+
+Tratamientos (incluido testigo) dentro de un ensayo.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ensayo_id | UUID (NOT NULL) | - | FK a ensayos |
+| nombre | TEXT (NOT NULL) | - | Nombre del tratamiento |
+| producto | TEXT | - | Producto aplicado |
+| dosis | NUMERIC | - | Dosis |
+| unidad_dosis | TEXT | - | Unidad de dosis |
+| agua_lt | NUMERIC | - | Litros de agua |
+| metodo | TEXT | - | Metodo de aplicacion |
+| es_testigo | BOOLEAN | false | Si es tratamiento testigo |
+| orden | INTEGER | 0 | Orden |
+
+#### ensayo_evaluaciones
+
+Datos recopilados por tratamiento y repeticion.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ensayo_id | UUID (NOT NULL) | - | FK a ensayos |
+| tratamiento_id | UUID (NOT NULL) | - | FK a ensayo_tratamientos |
+| fecha | DATE | - | Fecha de evaluacion |
+| repeticion | INTEGER | - | Numero de repeticion |
+| valores | JSONB | - | Valores medidos |
+| resultado | NUMERIC | - | Resultado calculado |
+| notas | TEXT | - | Observaciones |
+
+#### prescripciones
+
+Recetas fitosanitarias emitidas por el ingeniero.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ingeniero_id | UUID (NOT NULL) | - | FK a auth.users |
+| finca_id | UUID (NOT NULL) | - | FK a fincas |
+| agricultor_id | UUID | - | FK a auth.users |
+| inspeccion_id | UUID | - | FK a inspecciones |
+| producto | TEXT | - | Producto recetado |
+| ingrediente_activo | TEXT | - | Ingrediente activo |
+| dosis | NUMERIC | - | Dosis |
+| unidad_dosis | TEXT | - | Unidad |
+| metodo_aplicacion | TEXT | - | Metodo |
+| intervalo_dias | INTEGER | - | Intervalo entre aplicaciones |
+| num_aplicaciones | INTEGER | - | Numero de aplicaciones |
+| carencia_dias | INTEGER | - | Periodo de carencia |
+| precauciones | TEXT | - | Precauciones de seguridad |
+| estado | TEXT | 'pendiente' | pendiente, en_ejecucion, completada, cancelada |
+| fecha_inicio | DATE | - | Inicio de aplicacion |
+| fecha_fin | DATE | - | Fin de aplicacion |
+| notas | TEXT | - | Observaciones |
+
+#### productos_ingeniero
+
+Catalogo de productos del ingeniero con gestion de stock.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ingeniero_id | UUID (NOT NULL) | - | FK a auth.users |
+| nombre | TEXT (NOT NULL) | - | Nombre comercial |
+| ingrediente_activo | TEXT | - | Principio activo |
+| tipo | TEXT | - | insecticida, fungicida, herbicida, etc. |
+| registro_sanitario | TEXT | - | Numero de registro |
+| cultivos_autorizados | TEXT | - | Cultivos autorizados |
+| dosis_recomendada | TEXT | - | Dosis recomendada |
+| carencia_dias | INTEGER | - | Periodo de carencia |
+| precio | NUMERIC | 0 | Precio de venta |
+| unidad_venta | TEXT | - | Unidad de venta |
+| stock | NUMERIC | 0 | Stock disponible |
+| toxicidad | TEXT | - | Banda toxicologica (I, II, III, IV) |
+| activo | BOOLEAN | true | Si esta activo |
+| notas | TEXT | - | Observaciones |
+
+#### ventas_insumos
+
+Ventas de insumos del ingeniero a agricultores.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ingeniero_id | UUID (NOT NULL) | - | FK a auth.users |
+| agricultor_id | UUID | - | FK a auth.users |
+| finca_id | UUID | - | FK a fincas |
+| prescripcion_id | UUID | - | FK a prescripciones |
+| fecha | DATE | - | Fecha de venta |
+| total | NUMERIC | 0 | Total de la venta |
+| forma_pago | TEXT | - | Metodo de pago |
+| cobrado | BOOLEAN | true | Si se cobro |
+| fecha_cobro | DATE | - | Fecha de cobro |
+| notas | TEXT | - | Observaciones |
+
+#### ventas_insumos_detalle
+
+Lineas de detalle de cada venta de insumo.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| venta_id | UUID (NOT NULL) | - | FK a ventas_insumos |
+| producto_id | UUID (NOT NULL) | - | FK a productos_ingeniero |
+| cantidad | NUMERIC | 0 | Cantidad vendida |
+| precio_unitario | NUMERIC | 0 | Precio unitario |
+| total | NUMERIC | 0 | Total de la linea |
+
+#### programacion_inspecciones
+
+Programacion periodica de visitas a fincas.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ingeniero_id | UUID (NOT NULL) | - | FK a auth.users |
+| finca_id | UUID (NOT NULL) | - | FK a fincas |
+| area_id | UUID | - | FK a areas |
+| frecuencia | TEXT | - | semanal, quincenal, mensual |
+| dias_intervalo | INTEGER | - | Dias entre visitas |
+| proxima_visita | DATE | - | Proxima fecha programada |
+| estado | TEXT | 'activa' | activa, pausada, cancelada |
+| notas | TEXT | - | Observaciones |
+
+#### visitas_tecnicas
+
+Registro GPS de visitas tecnicas realizadas.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ingeniero_id | UUID (NOT NULL) | - | FK a auth.users |
+| finca_id | UUID (NOT NULL) | - | FK a fincas |
+| fecha | DATE | - | Fecha de visita |
+| hora_llegada | TEXT | - | Hora de check-in |
+| hora_salida | TEXT | - | Hora de check-out |
+| latitud | NUMERIC | - | Coordenada GPS |
+| longitud | NUMERIC | - | Coordenada GPS |
+| tipo | TEXT | - | inspeccion, asesoria, ensayo, entrega |
+| resumen | TEXT | - | Resumen de la visita |
+| inspeccion_id | UUID | - | FK a inspecciones (si aplica) |
+
+### Tablas de Chat (v4.0)
+
+#### chat_grupos
+
+Grupos de chat creados por el ingeniero.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| ingeniero_id | UUID (NOT NULL) | - | FK a auth.users |
+| nombre | TEXT (NOT NULL) | - | Nombre del grupo |
+| descripcion | TEXT | - | Descripcion |
+| tipo | TEXT | - | Tipo de grupo |
+
+#### chat_grupo_miembros
+
+Miembros de cada grupo de chat.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| grupo_id | UUID (NOT NULL) | - | FK a chat_grupos |
+| usuario_id | UUID (NOT NULL) | - | FK a auth.users |
+| fecha_union | DATE | - | Fecha de incorporacion |
+
+#### chat_conversaciones
+
+Conversaciones individuales y grupales.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| tipo | TEXT | - | 'individual' o 'grupo' |
+| grupo_id | UUID | - | FK a chat_grupos (si tipo='grupo') |
+| participante_1 | UUID | - | FK a auth.users |
+| participante_2 | UUID | - | FK a auth.users |
+| ultimo_mensaje | TEXT | - | Preview del ultimo mensaje |
+| ultimo_mensaje_at | TIMESTAMPTZ | - | Timestamp del ultimo mensaje |
+
+#### chat_mensajes
+
+Mensajes individuales del chat.
+
+| Columna | Tipo | Default | Descripcion |
+|---------|------|---------|-------------|
+| id | UUID (PK) | gen_random_uuid() | ID |
+| conversacion_id | UUID (NOT NULL) | - | FK a chat_conversaciones |
+| emisor_id | UUID (NOT NULL) | - | FK a auth.users |
+| tipo | TEXT | 'texto' | texto, imagen, archivo |
+| contenido | TEXT | - | Contenido del mensaje |
+| archivo_url | TEXT | - | URL del archivo adjunto |
+| leido | BOOLEAN | false | Si fue leido |
+| vinculo_inspeccion_id | UUID | - | FK a inspecciones (para compartir reportes) |
+
+### Publicacion Realtime para Chat
+
+La tabla `chat_mensajes` debe tener habilitada la **publicacion Realtime** en Supabase para que el WebSocket funcione:
+
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE chat_mensajes;
+```
 
 ## Diagrama de Relaciones
 
@@ -366,8 +643,25 @@ auth.users
          │    └── fotos_inspeccion (1:N)
          ├── aplicaciones_fitosanitarias (1:N)
          │
-         └── ai_conversations (1:N) ── usuario_id
-              └── ai_chat_history (1:N)
+         ├── ai_conversations (1:N) ── usuario_id
+         │    └── ai_chat_history (1:N)
+         │
+         └── (tablas del ingeniero ── ingeniero_id = auth.uid())
+              ├── ingeniero_agricultores (1:N)
+              ├── protocolos_evaluacion (1:N)
+              │    └── ensayos (1:N) ── protocolo_id, finca_id
+              │         ├── ensayo_tratamientos (1:N)
+              │         └── ensayo_evaluaciones (1:N) ── tratamiento_id
+              ├── prescripciones (1:N) ── finca_id, inspeccion_id
+              ├── productos_ingeniero (1:N)
+              ├── ventas_insumos (1:N) ── finca_id, prescripcion_id
+              │    └── ventas_insumos_detalle (1:N) ── producto_id
+              ├── programacion_inspecciones (1:N) ── finca_id
+              ├── visitas_tecnicas (1:N) ── finca_id
+              ├── chat_grupos (1:N)
+              │    └── chat_grupo_miembros (1:N) ── usuario_id
+              └── chat_conversaciones (1:N) ── participante_1/2, grupo_id
+                   └── chat_mensajes (1:N) ── emisor_id
 ```
 
 ## Row Level Security (RLS)
@@ -397,6 +691,19 @@ CREATE POLICY "tabla_select" ON tabla FOR SELECT
 
 ### Tablas de IA
 - `ai_conversations` y `ai_chat_history`: Filtran por `usuario_id = auth.uid()` directamente
+
+### Tablas del ingeniero (v4.0)
+Tablas con `ingeniero_id` usan politica directa:
+```sql
+CREATE POLICY "tabla_select" ON tabla FOR SELECT
+  USING (ingeniero_id = auth.uid());
+```
+Aplica a: `ingeniero_agricultores`, `protocolos_evaluacion`, `productos_ingeniero`, `chat_grupos`, `programacion_inspecciones`, `visitas_tecnicas`
+
+### Tablas de chat (v4.0)
+- `chat_conversaciones`: El usuario debe ser `participante_1` o `participante_2`, o miembro del grupo referenciado
+- `chat_mensajes`: El usuario debe ser participante de la conversacion
+- `chat_grupo_miembros`: El usuario debe ser el `ingeniero_id` del grupo o su propio `usuario_id`
 
 ### user_profiles
 - Cada usuario solo ve/edita su propio perfil (`id = auth.uid()`)

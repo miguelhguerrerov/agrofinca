@@ -86,6 +86,13 @@ Analisis de rendimiento productivo:
 - Comparacion con rendimiento de referencia nacional
 - Evolucion de precios por producto
 
+### Distribucion de costos a cosechas individuales (v3.1)
+
+El tab de Rendimiento calcula metricas por cosecha individual:
+- **Costo/kg**: Costos del ciclo distribuidos entre las cosechas, dividido por kg cosechados
+- **Margen/kg**: Precio promedio de venta menos costo/kg
+- Permite identificar que cosechas son mas rentables dentro de un mismo ciclo
+
 ## Tab 5: Clientes
 
 Analisis de ventas por cliente:
@@ -150,9 +157,9 @@ else if (costo.area_id) {
 }
 ```
 
-### Nivel 3: Costos generales
+### Nivel 3: Costos generales (distribucion proporcional por m2 - v3.1)
 
-Si el costo no tiene ni `cultivo_id` ni `area_id`, se distribuye proporcionalmente segun la superficie cultivada de cada cultivo:
+Si el costo no tiene ni `cultivo_id` ni `area_id`, se distribuye proporcionalmente segun la superficie cultivada (m2) de cada cultivo:
 
 ```javascript
 else {
@@ -195,6 +202,13 @@ else result[cultivo_id].variables += monto;
 }
 ```
 
+### Separacion CAPEX (v3.1)
+
+Los costos vinculados a activos (`activo_id` presente) se tratan como **CAPEX** (gasto de capital) y se separan del flujo operativo:
+- El costo de adquisicion del activo se registra como costo fijo con `activo_id`
+- La depreciacion mensual se distribuye como costo fijo a traves de `depreciacion_mensual`
+- En los analisis por cultivo, la depreciacion se suma como un componente separado del costo total
+
 ## Exportacion CSV
 
 Cada tab tiene un boton de exportacion CSV que genera y descarga un archivo con los datos de la tabla actual. Funcionalidad Premium (`PlanGuard.isPaid()`).
@@ -205,3 +219,4 @@ El modulo tiene gating parcial:
 - Tabs basicos (Resumen) disponibles para todos
 - Tabs avanzados (Por Cultivo, Rendimiento, Punto de Equilibrio) requieren plan Premium
 - Exportacion CSV requiere plan Premium
+

@@ -129,6 +129,65 @@ Version compacta que combina datos clave para el consejo diario:
 }
 ```
 
+#### getIngenieroContext(ingenieroId) - v4.0
+
+Contexto multi-finca para el ingeniero agronomo. Agrega datos de todas las fincas de sus agricultores afiliados:
+
+```javascript
+{
+  rol: 'ingeniero',
+  total_agricultores: 8,
+  total_fincas: 12,
+  superficie_total_ha: '45.30',
+  ciclos_activos: 15,
+  cultivos_en_cartera: ['Cacao', 'Banano', 'Cafe'],
+  fincas: [
+    {
+      nombre: 'Finca La Esperanza',
+      ubicacion: 'Guayaquil',
+      areas: 5,
+      ha: '8.50',
+      ciclos_activos: 3,
+      cultivos: ['Cacao', 'Banano'],
+      dias_sin_inspeccion: 7,
+      estado_fitosanitario: 'bueno'   // bueno (<14d), alerta (14-30d), critico (>30d)
+    },
+    // ... hasta 10 fincas
+  ],
+  alertas: [
+    'Finca X lleva 45 dias sin inspeccion',
+    'Finca Y: ultimo estado fitosanitario critico'
+  ],
+  prescripciones_activas: 5,
+  visitas_pendientes: 3,
+  resumen: 'Ingeniero con 8 agricultores, 12 fincas, 45.3 ha total. Cultivos: Cacao, Banano, Cafe. 2 alertas activas.'
+}
+```
+
+La funcion consulta: `ingeniero_agricultores`, fincas de cada agricultor, areas, ciclos, inspecciones, prescripciones y programacion_inspecciones.
+
+### Contexto IA condicional por rol (v4.0)
+
+El modulo `asistente-ia.js` detecta automaticamente el rol del usuario al construir el contexto:
+
+```javascript
+// En buildContext():
+if (AuthModule.isIngeniero()) {
+  baseContext = await AIDataHelpers.getIngenieroContext(AuthModule.getUserId());
+} else {
+  // Contexto normal de finca individual
+  baseContext = await AIDataHelpers.getFarmSummary(fincaId);
+}
+```
+
+Esto permite que el asistente IA responda con informacion relevante al rol:
+- **Agricultor**: Contexto de una finca, cultivos, costos, ventas
+- **Ingeniero**: Vision panoramica de cartera de fincas, alertas, prescripciones
+
+### Filtro de cultivos activos (v3.1)
+
+La IA solo recibe informacion de cultivos que tienen **ciclos activos**, no el catalogo completo. Esto evita ruido en las recomendaciones al excluir cultivos definidos pero no plantados.
+
 ---
 
 ## ai-cache.js (AICache)
@@ -313,3 +372,4 @@ PlanGuard.openUpgrade()               // Navega a seccion de upgrade
 - Analisis financiero avanzado (tabs 2-7)
 - Exportacion CSV
 - Fincas ilimitadas (free: `AppConfig.FREE_FARM_LIMIT`)
+

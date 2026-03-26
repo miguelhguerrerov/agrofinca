@@ -140,3 +140,13 @@ Al seleccionar una finca, se muestra una vista con tabs:
 - Datos generales de la finca
 - Resumen: total areas, area cultivada, cultivos activos
 - Botones de editar/eliminar
+
+## Acceso del Ingeniero Agronomo (v4.0)
+
+El ingeniero agronomo puede ver las fincas de sus agricultores afiliados en **modo lectura**:
+
+- A traves del modulo `ing-agricultores.js`, el ingeniero accede a la ficha del agricultor
+- Desde la ficha, puede ver las fincas del agricultor con sus areas, ciclos e inspecciones
+- La vista es **read-only**: el ingeniero no puede crear, editar ni eliminar datos de la finca del agricultor
+- El ingeniero puede crear inspecciones y prescripciones vinculadas a las fincas del agricultor (desde sus propios modulos `ing-inspecciones` e `ing-prescripciones`)
+

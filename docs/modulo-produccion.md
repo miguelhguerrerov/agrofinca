@@ -26,9 +26,18 @@ El modulo de produccion maneja tres tabs principales:
 Al crear un ciclo:
 1. Se selecciona area y cultivo
 2. Se determina `tipo_ciclo` automaticamente segun `cultivo.ciclo_dias`
-3. Si es perenne y el cultivo tiene `fases_template`, se crean las fases automaticamente
+3. Si es perenne y el cultivo tiene `fases_template`, se crean las fases automaticamente desde el template personalizado del catalogo
 4. Se calcula `fecha_fin_estimada = fecha_inicio + ciclo_dias`
 5. Se crea registro en `area_cultivos` con la proporcion del policultivo
+6. **Validacion estricta de proporcion (v3.1)**: La suma de proporciones activas en un area no puede exceder 100% (1.0)
+
+### Recalculo de fecha fin (v3.1)
+
+Al cambiar la `fecha_inicio` de un ciclo estacional, la `fecha_fin_estimada` se recalcula automaticamente:
+```
+fecha_fin_estimada = nueva_fecha_inicio + ciclo_dias
+```
+Esto aplica solo a ciclos estacionales (ciclo_dias > 0).
 
 ### Estados de ciclo
 
@@ -49,9 +58,9 @@ Cada ciclo muestra:
 
 Las fases aplican a ciclos perennes y representan etapas del crecimiento.
 
-### Template de fases
+### Templates de fases personalizados por cultivo (v3.1)
 
-Los cultivos pueden tener un `fases_template` (JSONB) que define fases predeterminadas:
+Cada cultivo del catalogo puede tener su propio `fases_template` (JSONB en `cultivos_catalogo`) que define fases predeterminadas. Al crear un ciclo perenne, estas fases se copian automaticamente:
 
 ```json
 [
@@ -80,16 +89,17 @@ Logica:
 2. Si fase esta `en_curso` -> cambia a `completada`, registra `fecha_fin = hoy`
 3. Si hay siguiente fase, automaticamente la inicia
 
-### Visualizacion de fases
+### Visualizacion de fases (mejorada v3.1)
 
 Cada fase muestra:
 - Icono (planta o dinero si genera_ingresos)
 - Nombre y estado
-- Fechas previstas (calculadas acumulativamente desde fecha_inicio del ciclo)
-- Barra de progreso con colores:
-  - Verde: dentro del tiempo estimado
-  - Ambar: entre 100% y 120% del tiempo
-  - Rojo: excedido > 120%
+- **Barra de progreso** visual con colores segun estado temporal:
+  - Verde: dentro del tiempo estimado (< 100%)
+  - Ambar: entre 100% y 120% del tiempo estimado
+  - Rojo: excedido > 120% del tiempo estimado
+- **Fechas previstas** (predichas acumulativamente desde fecha_inicio del ciclo)
+- **Fechas reales** (fecha_inicio y fecha_fin de la fase)
 - Dias reales vs estimados (`actualDays / estimated`)
 
 ### Fechas predichas
@@ -215,3 +225,23 @@ La calidad puede ser: primera, segunda, tercera, rechazo.
 ### Quick Harvest
 
 `ProduccionModule.showQuickHarvest(fincaId)` abre un modal para registro rapido desde el FAB o desde el card del ciclo.
+
+---
+
+## Mejoras adicionales v3.1
+
+### Plantillas de fases por cultivo
+
+El campo `fases_template` (JSONB) en `cultivos_catalogo` permite definir fases fenologicas personalizadas por cultivo. Al crear un ciclo perenne, las fases se generan automaticamente desde este template. El usuario puede editar las plantillas desde el formulario del catalogo.
+
+### Visualizacion mejorada de fases
+
+Cada fase muestra:
+- Barra de progreso con porcentaje de avance (dias reales / dias estimados)
+- Fechas predichas calculadas acumulativamente
+- Boton de edicion individual para ajustar duracion estimada
+- Colores semanticos: verde (en tiempo), ambar (100-120%), rojo (>120%)
+
+### Dropdown de fase fenologica en inspecciones
+
+El formulario de inspecciones incluye un dropdown que lista las fases fenologicas del ciclo activo. Permite registrar en que etapa del cultivo se realizo la inspeccion.

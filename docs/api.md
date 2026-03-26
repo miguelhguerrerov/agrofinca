@@ -36,6 +36,7 @@ Cada tabla genera los endpoints CRUD estandar:
 Todas las tablas listadas en `SYNC_TABLES`:
 
 ```
+// Tablas originales
 fincas, finca_miembros, areas, cultivos_catalogo,
 clientes, proveedores, activos_finca, area_cultivos,
 ciclos_productivos, fases_fenologicas,
@@ -44,6 +45,12 @@ colmenas, inspecciones_colmena, camas_lombricompost, registros_lombricompost,
 ai_conversations, ai_chat_history,
 tareas, inspecciones, fotos_inspeccion, aplicaciones_fitosanitarias,
 lotes_animales, registros_animales, user_profiles
+
+// v4.0 - Tablas del ingeniero
+ingeniero_agricultores, protocolos_evaluacion, productos_ingeniero, chat_grupos,
+ensayos, prescripciones, programacion_inspecciones, chat_conversaciones, chat_grupo_miembros,
+ensayo_tratamientos, ventas_insumos, visitas_tecnicas,
+ensayo_evaluaciones, ventas_insumos_detalle, chat_mensajes
 ```
 
 ### Filtros comunes
@@ -312,3 +319,115 @@ Tipos de analisis:
 | 400 | Accion desconocida |
 | 502 | Error en Gemini API |
 | 500 | Error interno de la Edge Function |
+
+---
+
+## Supabase Realtime (WebSocket) - v4.0
+
+### Endpoint
+
+```
+wss://<PROJECT_ID>.supabase.co/realtime/v1/websocket?apikey=<ANON_KEY>&vsn=1.0.0
+```
+
+### Autenticacion
+
+Tras conectar el WebSocket, se envia un mensaje `phx_join` con el `access_token` JWT:
+
+```json
+{
+  "topic": "realtime:public:chat_mensajes:conversacion_id=eq.{id}",
+  "event": "phx_join",
+  "payload": { "access_token": "<JWT_TOKEN>" },
+  "ref": "1"
+}
+```
+
+### Canal de chat
+
+```
+Topico: realtime:public:chat_mensajes:conversacion_id=eq.{uuid}
+```
+
+### Eventos recibidos
+
+| Evento | Descripcion |
+|--------|-------------|
+| `INSERT` | Nuevo mensaje en la conversacion |
+| `UPDATE` | Mensaje editado (ej. marcado como leido) |
+| `DELETE` | Mensaje eliminado |
+
+El payload contiene `columns`, `record` (datos nuevos) y `old_record` (datos previos en UPDATE/DELETE).
+
+### Heartbeat
+
+Se envia `heartbeat` cada 30 segundos para mantener la conexion:
+
+```json
+{ "topic": "phoenix", "event": "heartbeat", "payload": {}, "ref": "2" }
+```
+
+### Ejemplo de suscripcion
+
+```javascript
+SupabaseClient.subscribeToChat(conversacionId, (newMessage) => {
+  // newMessage contiene el registro INSERT completo
+  renderMessage(newMessage);
+});
+```
+
+### Requisitos
+
+1. La tabla `chat_mensajes` debe estar en la publicacion Realtime:
+   ```sql
+   ALTER PUBLICATION supabase_realtime ADD TABLE chat_mensajes;
+   ```
+2. El usuario debe tener permisos SELECT en `chat_mensajes` via RLS
+
+---
+
+## Endpoints REST de tablas del ingeniero (v4.0)
+
+Las 15 nuevas tablas generan endpoints REST automaticamente via PostgREST.
+
+### Tablas disponibles
+
+| Tabla | Descripcion |
+|-------|-------------|
+| `ingenieros` | Perfil del ingeniero (especialidad, cedula, registro_senescyt) |
+| `ingeniero_agricultores` | Relacion N:M ingeniero-agricultor (estado_invitacion) |
+| `ing_inspecciones` | Inspecciones de campo del ingeniero |
+| `ing_fotos_inspeccion` | Fotos asociadas a inspecciones |
+| `protocolos_evaluacion` | Protocolos fitosanitarios con grilla dinamica |
+| `evaluaciones_protocolo` | Resultados de evaluaciones ejecutadas |
+| `ensayos` | Ensayos comparativos (tratamientos x repeticiones) |
+| `ensayo_mediciones` | Mediciones individuales por tratamiento y repeticion |
+| `prescripciones` | Prescripciones tecnicas con seguimiento de cumplimiento |
+| `visitas` | Calendario de visitas con check-in/out GPS |
+| `ing_productos` | Catalogo de productos del ingeniero (stock, toxicidad) |
+| `ventas_insumos` | Ventas de insumos a agricultores |
+| `ventas_insumos_items` | Items individuales de cada venta |
+| `chat_conversaciones` | Conversaciones entre ingeniero y agricultor |
+| `chat_mensajes` | Mensajes con soporte offline (pending_sync) |
+
+### Ejemplos de consultas
+
+```
+// Agricultores afiliados al ingeniero
+GET /rest/v1/ingeniero_agricultores?ingeniero_id=eq.{uuid}&estado=eq.activo
+
+// Prescripciones activas
+GET /rest/v1/prescripciones?ingeniero_id=eq.{uuid}&estado=in.(pendiente,en_ejecucion)
+
+// Productos con stock bajo
+GET /rest/v1/ing_productos?ingeniero_id=eq.{uuid}&stock=lt.10&activo=eq.true
+
+// Mensajes de una conversacion
+GET /rest/v1/chat_mensajes?conversacion_id=eq.{uuid}&order=created_at.asc
+
+// Ensayos con mediciones (join)
+GET /rest/v1/ensayos?select=*,ensayo_mediciones(*)&ingeniero_id=eq.{uuid}
+
+// Visitas del mes
+GET /rest/v1/visitas?ingeniero_id=eq.{uuid}&fecha=gte.2025-01-01&fecha=lte.2025-01-31
+```

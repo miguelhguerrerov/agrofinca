@@ -148,3 +148,15 @@ Al registrar una venta, se puede seleccionar un cliente del directorio. Esto:
 1. Llena `cliente_id` en la venta
 2. Llena `comprador` con el nombre del cliente
 3. Activa la busqueda de precio historico para ese cliente
+
+---
+
+## Mejoras v3.1
+
+### Formulario completo de nuevo cliente (modal secundario)
+
+Al registrar una venta, si el cliente no existe en el directorio, el usuario puede crear uno nuevo sin salir del formulario de venta. La funcion `showNestedClienteForm()` abre un modal secundario con el formulario completo de cliente (nombre, telefono, email, ubicacion, tipo). Al guardar, el nuevo cliente se selecciona automaticamente en el formulario de venta. Este modal reemplaza el input de texto libre anterior (`comprador`), garantizando que todos los clientes queden registrados en el directorio.
+
+### Correccion de ciclo_id en ventas
+
+Se corrigio un bug donde el formulario de ventas usaba la tabla `'ciclos'` en lugar de `'ciclos_productivos'` al consultar los ciclos disponibles. Esto causaba que el select de ciclos apareciera vacio. La correccion asegura que `ciclo_id` se vincule correctamente con `ciclos_productivos`.

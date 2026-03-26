@@ -1,23 +1,101 @@
 # AgroFinca - Historial de Versiones
 
-## v3.1 - Mejoras y Correcciones (2024)
+## v4.0 — Rol Ingeniero Agronomo (Marzo 2026)
+
+### Nuevo rol: Ingeniero Agronomo
+- Campo `user_profiles.rol`: `'agricultor'` (default) o `'ingeniero'`
+- Registro con seleccion de rol + campos condicionales: `especialidad`, `registro_profesional`
+- `AuthModule.getUserRol()`, `AuthModule.isIngeniero()` para deteccion de rol
+- Routing condicional: agricultores van al dashboard de finca, ingenieros al `ing-dashboard`
+- Sidebar dinamico: `App.updateNavigationForRole()` oculta/muestra items segun rol
+
+### 9 modulos del ingeniero (`ing-*.js`)
+- **ing-dashboard.js**: KPIs consolidados, mapa Leaflet con marcadores de fincas (verde/amarillo/rojo), alertas priorizadas
+- **ing-agricultores.js**: Gestion de afiliados, ficha de agricultor, vista read-only de fincas
+- **ing-inspecciones.js**: 3 tabs (Inspecciones / Protocolos / Ensayos), grid dinamico para datos de campo
+- **ing-prescripciones.js**: 3 tabs (Activas / Historial / Seguimiento), tracking de adherencia
+- **ing-productos.js**: Catalogo con badges de toxicidad (banda I-IV), gestion de stock
+- **ing-ventas.js**: Ventas a agricultores con detalle multi-linea, tracking de credito
+- **ing-chat.js**: Chat hibrido (Realtime WebSocket + sync offline), grupos, badges de no leidos
+- **ing-calendario.js**: Vistas mensual/semanal/hoy, GPS check-in/out, planificacion de rutas
+- **ing-reportes.js**: 5 reportes imprimibles (inspeccion, ensayo, cartera, rendimiento, ventas)
+
+### Base de datos (15 nuevas tablas)
+- `ingeniero_agricultores`: Relacion ingeniero-agricultor
+- `protocolos_evaluacion`: Protocolos reutilizables de evaluacion
+- `ensayos`, `ensayo_tratamientos`, `ensayo_evaluaciones`: Ensayos de campo completos
+- `prescripciones`: Recetas fitosanitarias del ingeniero
+- `productos_ingeniero`: Catalogo de productos con stock y toxicidad
+- `ventas_insumos`, `ventas_insumos_detalle`: Ventas multi-linea a agricultores
+- `programacion_inspecciones`: Programacion periodica de visitas
+- `visitas_tecnicas`: Registro GPS de visitas
+- `chat_grupos`, `chat_grupo_miembros`, `chat_conversaciones`, `chat_mensajes`: Sistema de chat
+- DB_VERSION incrementado a 8 (IndexedDB)
+- SQL idempotente (`DROP POLICY IF EXISTS` antes de `CREATE POLICY`)
+- Publicacion Realtime habilitada para `chat_mensajes`
+
+### Tablas modificadas
+- `user_profiles`: +`rol`, +`especialidad`, +`registro_profesional`
+- `inspecciones`: +`ingeniero_id`, +`protocolo_id`, +`datos_evaluacion` (JSONB), +`condiciones_ambientales` (JSONB)
+- `aplicaciones_fitosanitarias`: +`prescripcion_id`
+- `tareas`: +`asignado_por_ingeniero`
+
+### Chat hibrido
+- Supabase Realtime (WebSocket) para mensajes en tiempo real
+- Sincronizacion offline con campo `pending_sync` y cola local
+- Indicadores de estado: enviado, entregado, leido
+
+### Evaluaciones y ensayos
+- Protocolos de evaluacion fitosanitaria con grilla dinamica (plagas x puntos de muestreo)
+- Ensayos comparativos con tratamientos x repeticiones y mediciones individuales
+
+### IA multi-finca
+- `getIngenieroContext()` agrega datos de todas las fincas afiliadas
+- `buildContext()` detecta rol y usa contexto multi-finca para ingeniero
+- IA solo usa cultivos con ciclos activos (fix en `getFarmSummary`)
+
+### Infraestructura
+- `supabase-client.js`: `connectRealtime()`, `subscribeToChat()`, `unsubscribeChat()`, `disconnectRealtime()` (WebSocket Phoenix Channel)
+- `auth.js`: `getUserRol()`, `isIngeniero()`, seleccion de rol en registro
+- `app.js`: `updateNavigationForRole()`, sidebar dinamico, 24 paginas registradas
+- `ai-data-helpers.js`: `getIngenieroContext()` para contexto multi-finca
+- `asistente-ia.js`: `buildContext()` detecta `isIngeniero()` para contexto multi-finca
+- `db.js`: DB_VERSION 8, 15 nuevos IndexedDB stores
+- `sync.js`: 15 nuevas tablas en SYNC_TABLES, KNOWN_COLUMNS completo, PUSH_ORDER actualizado
+- `sw.js`: CACHE v16, push notification handler activo, 9 nuevos archivos estaticos
+- Push notifications para mensajes de chat, alertas de inspecciones, prescripciones
+
+---
+
+## v3.1 — Mejoras Sistema Contable (Marzo 2026)
 
 ### Fases fenologicas
-- Visualizacion mejorada de fases con barras de progreso coloreadas (verde/ambar/rojo)
-- Fechas previstas calculadas acumulativamente desde inicio del ciclo
-- Indicadores visuales de tiempo real vs estimado (`actualDays/estimatedDays`)
-- Soporte para edicion individual de fases
-- Columna `duracion_estimada_dias` agregada a `fases_fenologicas`
-- Columna `fases_template` (JSONB) agregada a `cultivos_catalogo` para templates de fases
+- Visualizacion mejorada con barras de progreso coloreadas (verde/ambar/rojo)
+- Fechas predichas calculadas acumulativamente desde inicio del ciclo
+- Plantillas personalizables por cultivo (`fases_template` JSONB en `cultivos_catalogo`)
+- Boton de edicion individual de fases
 
-### Validacion y correcciones
-- Fix en distribucion de costos: correcta asignacion de costos generales cuando no hay cultivo_id ni area_id
-- Fix en datos de IA: contexto actualizado para incluir estadisticas de cultivos y cosechas proximas
-- Fix en sincronizacion: columna `activo_id` agregada a costos para vincular costos de depreciacion
-- Mejoras de validacion en formularios de ventas y costos
+### Produccion
+- Validacion estricta de proporcion de policultivo (suma <= 100%, deshabilita boton guardar)
+- Recalculo automatico de `fecha_fin_estimada` al cambiar `fecha_inicio`
+- Dropdown de fase fenologica en formulario de inspecciones
 
-### Documentacion
-- Creacion de 12 archivos de documentacion tecnica en `docs/`
+### Ventas
+- Formulario completo de nuevo cliente en modal secundario (`showNestedClienteForm`)
+- Fix: `ciclo_id` usaba tabla `'ciclos'` en vez de `'ciclos_productivos'`
+
+### Costos y finanzas
+- Activos vinculados a costos: auto-crear costo con `categoria='activo'` y `activo_id` FK (CAPEX)
+- Distribucion de costos a cosechas individuales (`distribuirCostosACosechas`): costo/kg, margen/kg en tab Rendimiento
+- Costos generales distribuidos a areas proporcionalmente por m2 (3 niveles en `renderPorArea`)
+- Separacion CAPEX: costos con `categoria='activo'` excluidos de costos operativos
+
+### IA
+- IA solo usa cultivos con ciclos activos (no catalogo completo)
+
+### Infraestructura
+- SQL idempotente (DROP POLICY IF EXISTS)
+- 12 archivos de documentacion tecnica en `docs/`
 
 ---
 

@@ -185,14 +185,16 @@ Logica:
 }
 ```
 
-### Creacion automatica de costo
+### Creacion automatica de costo (CAPEX)
 
-Al crear un activo, se crea automaticamente un registro de costo:
-- Categoria: segun tipo de activo (herramienta, infraestructura, etc.)
-- Total: costo de adquisicion
-- Descripcion: nombre del activo
-- Tipo costo: 'fijo'
-- activo_id: ID del activo
+Al crear un activo, se crea automaticamente un registro de costo con:
+- **Categoria**: `'activo'` (identifica el costo como inversion de capital / CAPEX)
+- **Total**: costo de adquisicion
+- **Descripcion**: nombre del activo
+- **Tipo costo**: `'fijo'`
+- **activo_id**: FK al activo creado
+
+Esta categoria especial `'activo'` permite separar las inversiones de capital (CAPEX) de los costos operativos (OPEX) en el analisis financiero. Los costos con `categoria = 'activo'` se excluyen del calculo de costos operativos en el modulo de finanzas y se muestran en una seccion separada de inversiones.
 
 ### Dar de baja
 

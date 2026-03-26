@@ -6,8 +6,9 @@
 
 | Servicio | Uso |
 |----------|-----|
-| **Auth** | Registro/login con email y password |
+| **Auth** | Registro/login con email y password, seleccion de rol |
 | **Database** (PostgreSQL) | Almacenamiento persistente con RLS |
+| **Realtime** | WebSocket para chat en vivo (publicacion en `chat_mensajes`) |
 | **Edge Functions** | Proxy seguro a Gemini API |
 | **PostgREST** | API REST auto-generada de las tablas |
 
@@ -36,10 +37,13 @@ const AppConfig = {
 ## Autenticacion (Supabase Auth)
 
 ### Flujo de registro
-1. Usuario llena formulario de registro (nombre, email, password)
-2. `AuthModule` llama a `supabase.auth.signUp()` con metadata `{ nombre }`
-3. Trigger `on_auth_user_created` crea automaticamente `user_profiles` con plan 'free'
-4. Se inicia sesion automaticamente
+1. Usuario llena formulario de registro (nombre, email, password, **rol**)
+2. Si el rol es `'ingeniero'`, se muestran y validan campos adicionales: **especialidad** y **registro_profesional**
+3. `AuthModule` llama a `supabase.auth.signUp()` con metadata `{ nombre }`
+4. Trigger `on_auth_user_created` crea automaticamente `user_profiles` con plan 'free'
+5. El frontend hace upsert en `user_profiles` con `rol`, `especialidad`, `registro_profesional`
+6. Se inicia sesion automaticamente
+7. La pagina por defecto se determina segun el rol: `ing-dashboard` para ingenieros, `dashboard` para agricultores
 
 ### Flujo de login
 1. Usuario ingresa email y password
@@ -102,7 +106,12 @@ PUSH_ORDER = [
   'cosechas', 'ventas', 'costos', 'depreciacion_mensual',  // Hijos
   'inspecciones_colmena', 'registros_lombricompost',
   'tareas', 'inspecciones',
-  'fotos_inspeccion', 'aplicaciones_fitosanitarias', 'registros_animales'
+  'fotos_inspeccion', 'aplicaciones_fitosanitarias', 'registros_animales',
+  // v4.0 - Tablas del ingeniero (ordenadas por FK)
+  'ingeniero_agricultores', 'protocolos_evaluacion', 'productos_ingeniero', 'chat_grupos',
+  'ensayos', 'prescripciones', 'programacion_inspecciones', 'chat_conversaciones', 'chat_grupo_miembros',
+  'ensayo_tratamientos', 'ventas_insumos', 'visitas_tecnicas',
+  'ensayo_evaluaciones', 'ventas_insumos_detalle', 'chat_mensajes'
 ]
 ```
 
@@ -185,12 +194,63 @@ if (new Date(remote.updated_at) > new Date(local.updated_at)) {
 
 ---
 
+## Supabase Realtime (v4.0)
+
+### Protocolo
+
+El chat entre ingeniero y agricultores usa **Supabase Realtime** via WebSocket (protocolo Phoenix Channel).
+
+### Conexion
+
+```
+URL: wss://<PROJECT_ID>.supabase.co/realtime/v1/websocket?apikey=<ANON_KEY>&vsn=1.0.0
+```
+
+### Funciones en supabase-client.js
+
+| Funcion | Descripcion |
+|---------|-------------|
+| `connectRealtime()` | Abre WebSocket, configura heartbeat (30s) y auto-reconnect (5s) |
+| `subscribeToChat(conversacionId, callback)` | Se suscribe a INSERTs en `chat_mensajes` filtrado por `conversacion_id` |
+| `unsubscribeChat(conversacionId)` | Deja el canal Phoenix |
+| `disconnectRealtime()` | Cierra WebSocket, limpia timers |
+
+### Flujo de un mensaje en tiempo real
+
+```
+1. Ingeniero escribe mensaje -> INSERT en chat_mensajes (via REST upsert)
+2. Supabase Realtime detecta INSERT en chat_mensajes (publicacion habilitada)
+3. WebSocket envia evento al canal `realtime:public:chat_mensajes:conversacion_id=eq.{id}`
+4. callback() del suscriptor recibe el nuevo mensaje y actualiza la UI
+5. Si el WebSocket no esta conectado, el mensaje se sincroniza via SyncEngine en el proximo ciclo
+```
+
+### Requisito en base de datos
+
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE chat_mensajes;
+```
+
+### Politicas RLS del ingeniero (v4.0)
+
+Las 15 nuevas tablas usan `DROP POLICY IF EXISTS` antes de `CREATE POLICY` para ser idempotentes:
+
+```sql
+DROP POLICY IF EXISTS "tabla_select" ON tabla;
+CREATE POLICY "tabla_select" ON tabla FOR SELECT
+  USING (ingeniero_id = auth.uid());
+```
+
+Tablas con `finca_id` (como `ensayos`, `prescripciones`, `ventas_insumos`) permiten ademas acceso al agricultor propietario de la finca via `user_finca_ids()`.
+
+---
+
 ## Service Worker (sw.js)
 
 ### Cache
 
-- Nombre: `agrofinca-v15` (incrementar en cada deploy)
-- Archivos estaticos: todos los JS, CSS, HTML, iconos, manifest
+- Nombre: `agrofinca-v16` (incrementar en cada deploy)
+- Archivos estaticos: todos los JS (incluyendo 9 modulos `ing-*.js`), CSS, HTML, iconos, manifest
 - CDN: Leaflet CSS/JS, Leaflet Draw CSS/JS
 
 ### Estrategias de cache
@@ -215,9 +275,9 @@ self.addEventListener('sync', event => {
 });
 ```
 
-### Push Notifications (preparado)
+### Push Notifications
 
-El SW tiene soporte basico para push notifications, aunque la implementacion completa del backend no esta activa:
+El SW maneja eventos `push` para mostrar notificaciones del servidor (ej: nuevo mensaje de chat, alerta de inspeccion):
 
 ```javascript
 self.addEventListener('push', event => {
@@ -227,6 +287,11 @@ self.addEventListener('push', event => {
   });
 });
 ```
+
+En v4.0, las push notifications se activan para:
+- Nuevos mensajes de chat cuando la app no esta en primer plano
+- Alertas de inspecciones programadas vencidas
+- Notificaciones de prescripciones asignadas
 
 ### Ciclo de vida
 
